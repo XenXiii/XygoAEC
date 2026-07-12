@@ -4,8 +4,8 @@ import assert from "node:assert/strict";
 import { handleApiRequest } from "../src/handlers.js";
 import { createMemoryRepository } from "../src/repositories/memory.js";
 
-test("health endpoint returns staged ok response", () => {
-  const response = handleApiRequest({
+test("health endpoint returns staged ok response", async () => {
+  const response = await handleApiRequest({
     method: "GET",
     path: "/health"
   });
@@ -15,9 +15,9 @@ test("health endpoint returns staged ok response", () => {
   assert.equal(response.body.staged, true);
 });
 
-test("tenant-scoped project list requires matching staged tenant header", () => {
+test("tenant-scoped project list requires matching staged tenant header", async () => {
   const repository = createMemoryRepository();
-  const response = handleApiRequest({
+  const response = await handleApiRequest({
     method: "GET",
     path: "/v1/tenants/tenant-commercial-sim/projects",
     repository,
@@ -30,9 +30,9 @@ test("tenant-scoped project list requires matching staged tenant header", () => 
   assert.equal(response.body.items.length, 1);
 });
 
-test("tenant mismatch is rejected", () => {
+test("tenant mismatch is rejected", async () => {
   const repository = createMemoryRepository();
-  const response = handleApiRequest({
+  const response = await handleApiRequest({
     method: "GET",
     path: "/v1/tenants/tenant-commercial-sim/projects",
     repository,
@@ -45,9 +45,9 @@ test("tenant mismatch is rejected", () => {
   assert.equal(response.body.error, "forbidden");
 });
 
-test("executive dashboard endpoint returns staged summary", () => {
+test("executive dashboard endpoint returns staged summary", async () => {
   const repository = createMemoryRepository();
-  const response = handleApiRequest({
+  const response = await handleApiRequest({
     method: "GET",
     path: "/v1/tenants/tenant-commercial-sim/dashboard/executive",
     repository,
@@ -61,10 +61,10 @@ test("executive dashboard endpoint returns staged summary", () => {
   assert.equal(response.body.item.staged, true);
 });
 
-test("executive dashboard permit summary reflects repository-backed permit changes", () => {
+test("executive dashboard permit summary reflects repository-backed permit changes", async () => {
   const repository = createMemoryRepository();
 
-  const createResponse = handleApiRequest({
+  const createResponse = await handleApiRequest({
     method: "POST",
     path: "/v1/tenants/tenant-commercial-sim/permits",
     repository,
@@ -82,7 +82,7 @@ test("executive dashboard permit summary reflects repository-backed permit chang
 
   assert.equal(createResponse.status, 201);
 
-  const response = handleApiRequest({
+  const response = await handleApiRequest({
     method: "GET",
     path: "/v1/tenants/tenant-commercial-sim/dashboard/executive",
     repository,
@@ -95,9 +95,9 @@ test("executive dashboard permit summary reflects repository-backed permit chang
   assert.equal(response.body.item.permitDelays, 1);
 });
 
-test("transfer queue endpoint returns staged transfers", () => {
+test("transfer queue endpoint returns staged transfers", async () => {
   const repository = createMemoryRepository();
-  const response = handleApiRequest({
+  const response = await handleApiRequest({
     method: "GET",
     path: "/v1/tenants/tenant-commercial-sim/transfers",
     repository,
@@ -110,10 +110,10 @@ test("transfer queue endpoint returns staged transfers", () => {
   assert.equal(response.body.item.stagedTransfers.length, 1);
 });
 
-test("audit event list and verification reflect staged API writes", () => {
+test("audit event list and verification reflect staged API writes", async () => {
   const repository = createMemoryRepository();
 
-  const createResponse = handleApiRequest({
+  const createResponse = await handleApiRequest({
     method: "POST",
     path: "/v1/tenants/tenant-commercial-sim/projects",
     repository,
@@ -129,7 +129,7 @@ test("audit event list and verification reflect staged API writes", () => {
 
   assert.equal(createResponse.status, 201);
 
-  const eventsResponse = handleApiRequest({
+  const eventsResponse = await handleApiRequest({
     method: "GET",
     path: "/v1/tenants/tenant-commercial-sim/audit-events",
     repository,
@@ -142,7 +142,7 @@ test("audit event list and verification reflect staged API writes", () => {
   assert.equal(eventsResponse.body.items.length, 1);
   assert.equal(eventsResponse.body.items[0].action, "api.project.created");
 
-  const verifyResponse = handleApiRequest({
+  const verifyResponse = await handleApiRequest({
     method: "GET",
     path: "/v1/tenants/tenant-commercial-sim/audit-events/verify",
     repository,
@@ -156,9 +156,9 @@ test("audit event list and verification reflect staged API writes", () => {
   assert.equal(verifyResponse.body.item.checkedEventCount, 1);
 });
 
-test("tenant-scoped issue list returns staged issues", () => {
+test("tenant-scoped issue list returns staged issues", async () => {
   const repository = createMemoryRepository();
-  const response = handleApiRequest({
+  const response = await handleApiRequest({
     method: "GET",
     path: "/v1/tenants/tenant-commercial-sim/issues",
     repository,
@@ -171,9 +171,9 @@ test("tenant-scoped issue list returns staged issues", () => {
   assert.equal(response.body.items.length, 1);
 });
 
-test("tenant-scoped RFI list returns staged RFIs", () => {
+test("tenant-scoped RFI list returns staged RFIs", async () => {
   const repository = createMemoryRepository();
-  const response = handleApiRequest({
+  const response = await handleApiRequest({
     method: "GET",
     path: "/v1/tenants/tenant-commercial-sim/rfis",
     repository,
@@ -186,9 +186,9 @@ test("tenant-scoped RFI list returns staged RFIs", () => {
   assert.equal(response.body.items.length, 1);
 });
 
-test("tenant-scoped permit package list returns staged permit packages", () => {
+test("tenant-scoped permit package list returns staged permit packages", async () => {
   const repository = createMemoryRepository();
-  const response = handleApiRequest({
+  const response = await handleApiRequest({
     method: "GET",
     path: "/v1/tenants/tenant-commercial-sim/permits",
     repository,
@@ -201,9 +201,9 @@ test("tenant-scoped permit package list returns staged permit packages", () => {
   assert.equal(response.body.items.length, 1);
 });
 
-test("tenant-scoped review session list returns staged review sessions", () => {
+test("tenant-scoped review session list returns staged review sessions", async () => {
   const repository = createMemoryRepository();
-  const response = handleApiRequest({
+  const response = await handleApiRequest({
     method: "GET",
     path: "/v1/tenants/tenant-commercial-sim/review-sessions",
     repository,
@@ -216,9 +216,9 @@ test("tenant-scoped review session list returns staged review sessions", () => {
   assert.equal(response.body.items.length, 1);
 });
 
-test("tenant-scoped AI review run list returns staged review runs", () => {
+test("tenant-scoped AI review run list returns staged review runs", async () => {
   const repository = createMemoryRepository();
-  const response = handleApiRequest({
+  const response = await handleApiRequest({
     method: "GET",
     path: "/v1/tenants/tenant-commercial-sim/ai-review-runs",
     repository,
@@ -231,9 +231,9 @@ test("tenant-scoped AI review run list returns staged review runs", () => {
   assert.equal(response.body.items.length, 1);
 });
 
-test("tenant-scoped AI finding list returns staged findings", () => {
+test("tenant-scoped AI finding list returns staged findings", async () => {
   const repository = createMemoryRepository();
-  const response = handleApiRequest({
+  const response = await handleApiRequest({
     method: "GET",
     path: "/v1/tenants/tenant-commercial-sim/ai-findings",
     repository,
@@ -246,9 +246,9 @@ test("tenant-scoped AI finding list returns staged findings", () => {
   assert.equal(response.body.items.length, 1);
 });
 
-test("unsupported methods are blocked on staged API surface", () => {
+test("unsupported methods are blocked on staged API surface", async () => {
   const repository = createMemoryRepository();
-  const response = handleApiRequest({
+  const response = await handleApiRequest({
     method: "PATCH",
     path: "/v1/tenants/tenant-commercial-sim/projects",
     repository,
@@ -261,10 +261,10 @@ test("unsupported methods are blocked on staged API surface", () => {
   assert.equal(response.body.error, "method_not_allowed");
 });
 
-test("project creation is staged, tenant-scoped, and readable immediately after write", () => {
+test("project creation is staged, tenant-scoped, and readable immediately after write", async () => {
   const repository = createMemoryRepository();
 
-  const createResponse = handleApiRequest({
+  const createResponse = await handleApiRequest({
     method: "POST",
     path: "/v1/tenants/tenant-commercial-sim/projects",
     repository,
@@ -281,7 +281,7 @@ test("project creation is staged, tenant-scoped, and readable immediately after 
   assert.equal(createResponse.status, 201);
   assert.equal(createResponse.body.item.id, "project-commercial-c");
 
-  const listResponse = handleApiRequest({
+  const listResponse = await handleApiRequest({
     method: "GET",
     path: "/v1/tenants/tenant-commercial-sim/projects",
     repository,
@@ -293,10 +293,10 @@ test("project creation is staged, tenant-scoped, and readable immediately after 
   assert.equal(listResponse.body.items.length, 2);
 });
 
-test("cross-tenant project creation is denied", () => {
+test("cross-tenant project creation is denied", async () => {
   const repository = createMemoryRepository();
 
-  const response = handleApiRequest({
+  const response = await handleApiRequest({
     method: "POST",
     path: "/v1/tenants/tenant-commercial-sim/projects",
     repository,
@@ -314,10 +314,10 @@ test("cross-tenant project creation is denied", () => {
   assert.equal(response.body.error, "forbidden");
 });
 
-test("issue creation is staged and visible through tenant issue listing", () => {
+test("issue creation is staged and visible through tenant issue listing", async () => {
   const repository = createMemoryRepository();
 
-  const createResponse = handleApiRequest({
+  const createResponse = await handleApiRequest({
     method: "POST",
     path: "/v1/tenants/tenant-commercial-sim/issues",
     repository,
@@ -336,7 +336,7 @@ test("issue creation is staged and visible through tenant issue listing", () => 
   assert.equal(createResponse.status, 201);
   assert.equal(createResponse.body.item.id, "issue-commercial-b");
 
-  const listResponse = handleApiRequest({
+  const listResponse = await handleApiRequest({
     method: "GET",
     path: "/v1/tenants/tenant-commercial-sim/issues",
     repository,
@@ -348,10 +348,10 @@ test("issue creation is staged and visible through tenant issue listing", () => 
   assert.equal(listResponse.body.items.length, 2);
 });
 
-test("issue creation rejects cross-tenant or unknown project references", () => {
+test("issue creation rejects cross-tenant or unknown project references", async () => {
   const repository = createMemoryRepository();
 
-  const response = handleApiRequest({
+  const response = await handleApiRequest({
     method: "POST",
     path: "/v1/tenants/tenant-commercial-sim/issues",
     repository,
@@ -370,10 +370,10 @@ test("issue creation rejects cross-tenant or unknown project references", () => 
   assert.equal(response.body.error, "forbidden");
 });
 
-test("RFI creation is staged and visible through tenant RFI listing", () => {
+test("RFI creation is staged and visible through tenant RFI listing", async () => {
   const repository = createMemoryRepository();
 
-  const createResponse = handleApiRequest({
+  const createResponse = await handleApiRequest({
     method: "POST",
     path: "/v1/tenants/tenant-commercial-sim/rfis",
     repository,
@@ -391,7 +391,7 @@ test("RFI creation is staged and visible through tenant RFI listing", () => {
   assert.equal(createResponse.status, 201);
   assert.equal(createResponse.body.item.id, "rfi-commercial-b");
 
-  const listResponse = handleApiRequest({
+  const listResponse = await handleApiRequest({
     method: "GET",
     path: "/v1/tenants/tenant-commercial-sim/rfis",
     repository,
@@ -403,10 +403,10 @@ test("RFI creation is staged and visible through tenant RFI listing", () => {
   assert.equal(listResponse.body.items.length, 2);
 });
 
-test("RFI creation rejects cross-tenant or unknown project references", () => {
+test("RFI creation rejects cross-tenant or unknown project references", async () => {
   const repository = createMemoryRepository();
 
-  const response = handleApiRequest({
+  const response = await handleApiRequest({
     method: "POST",
     path: "/v1/tenants/tenant-commercial-sim/rfis",
     repository,
@@ -424,10 +424,10 @@ test("RFI creation rejects cross-tenant or unknown project references", () => {
   assert.equal(response.body.error, "forbidden");
 });
 
-test("permit package creation is staged and visible through tenant permit listing", () => {
+test("permit package creation is staged and visible through tenant permit listing", async () => {
   const repository = createMemoryRepository();
 
-  const createResponse = handleApiRequest({
+  const createResponse = await handleApiRequest({
     method: "POST",
     path: "/v1/tenants/tenant-commercial-sim/permits",
     repository,
@@ -445,7 +445,7 @@ test("permit package creation is staged and visible through tenant permit listin
   assert.equal(createResponse.status, 201);
   assert.equal(createResponse.body.item.id, "permit-commercial-b");
 
-  const listResponse = handleApiRequest({
+  const listResponse = await handleApiRequest({
     method: "GET",
     path: "/v1/tenants/tenant-commercial-sim/permits",
     repository,
@@ -457,10 +457,10 @@ test("permit package creation is staged and visible through tenant permit listin
   assert.equal(listResponse.body.items.length, 2);
 });
 
-test("permit package creation rejects cross-tenant or unknown project references", () => {
+test("permit package creation rejects cross-tenant or unknown project references", async () => {
   const repository = createMemoryRepository();
 
-  const response = handleApiRequest({
+  const response = await handleApiRequest({
     method: "POST",
     path: "/v1/tenants/tenant-commercial-sim/permits",
     repository,
@@ -478,10 +478,10 @@ test("permit package creation rejects cross-tenant or unknown project references
   assert.equal(response.body.error, "forbidden");
 });
 
-test("review session creation is staged and visible through tenant review-session listing", () => {
+test("review session creation is staged and visible through tenant review-session listing", async () => {
   const repository = createMemoryRepository();
 
-  const createResponse = handleApiRequest({
+  const createResponse = await handleApiRequest({
     method: "POST",
     path: "/v1/tenants/tenant-commercial-sim/review-sessions",
     repository,
@@ -499,7 +499,7 @@ test("review session creation is staged and visible through tenant review-sessio
   assert.equal(createResponse.status, 201);
   assert.equal(createResponse.body.item.id, "review-commercial-b");
 
-  const listResponse = handleApiRequest({
+  const listResponse = await handleApiRequest({
     method: "GET",
     path: "/v1/tenants/tenant-commercial-sim/review-sessions",
     repository,
@@ -511,10 +511,10 @@ test("review session creation is staged and visible through tenant review-sessio
   assert.equal(listResponse.body.items.length, 2);
 });
 
-test("review session creation rejects cross-tenant or unknown project references", () => {
+test("review session creation rejects cross-tenant or unknown project references", async () => {
   const repository = createMemoryRepository();
 
-  const response = handleApiRequest({
+  const response = await handleApiRequest({
     method: "POST",
     path: "/v1/tenants/tenant-commercial-sim/review-sessions",
     repository,
@@ -533,10 +533,10 @@ test("review session creation rejects cross-tenant or unknown project references
   assert.equal(response.body.error, "forbidden");
 });
 
-test("AI review run creation is staged and visible through tenant run listing", () => {
+test("AI review run creation is staged and visible through tenant run listing", async () => {
   const repository = createMemoryRepository();
 
-  const createResponse = handleApiRequest({
+  const createResponse = await handleApiRequest({
     method: "POST",
     path: "/v1/tenants/tenant-commercial-sim/ai-review-runs",
     repository,
@@ -554,7 +554,7 @@ test("AI review run creation is staged and visible through tenant run listing", 
   assert.equal(createResponse.status, 201);
   assert.equal(createResponse.body.item.id, "review-run-commercial-b");
 
-  const listResponse = handleApiRequest({
+  const listResponse = await handleApiRequest({
     method: "GET",
     path: "/v1/tenants/tenant-commercial-sim/ai-review-runs",
     repository,
@@ -566,10 +566,10 @@ test("AI review run creation is staged and visible through tenant run listing", 
   assert.equal(listResponse.body.items.length, 2);
 });
 
-test("AI finding creation is staged and visible through tenant finding listing", () => {
+test("AI finding creation is staged and visible through tenant finding listing", async () => {
   const repository = createMemoryRepository();
 
-  const createResponse = handleApiRequest({
+  const createResponse = await handleApiRequest({
     method: "POST",
     path: "/v1/tenants/tenant-commercial-sim/ai-findings",
     repository,
@@ -588,7 +588,7 @@ test("AI finding creation is staged and visible through tenant finding listing",
   assert.equal(createResponse.status, 201);
   assert.equal(createResponse.body.item.id, "finding-commercial-b");
 
-  const listResponse = handleApiRequest({
+  const listResponse = await handleApiRequest({
     method: "GET",
     path: "/v1/tenants/tenant-commercial-sim/ai-findings",
     repository,
@@ -600,10 +600,10 @@ test("AI finding creation is staged and visible through tenant finding listing",
   assert.equal(listResponse.body.items.length, 2);
 });
 
-test("AI finding creation rejects cross-tenant or unknown review runs", () => {
+test("AI finding creation rejects cross-tenant or unknown review runs", async () => {
   const repository = createMemoryRepository();
 
-  const response = handleApiRequest({
+  const response = await handleApiRequest({
     method: "POST",
     path: "/v1/tenants/tenant-commercial-sim/ai-findings",
     repository,
@@ -623,10 +623,10 @@ test("AI finding creation rejects cross-tenant or unknown review runs", () => {
   assert.equal(response.body.error, "forbidden");
 });
 
-test("AI finding disposition update is staged and enforces governed conversion", () => {
+test("AI finding disposition update is staged and enforces governed conversion", async () => {
   const repository = createMemoryRepository();
 
-  const acceptedResponse = handleApiRequest({
+  const acceptedResponse = await handleApiRequest({
     method: "POST",
     path: "/v1/tenants/tenant-commercial-sim/ai-findings/finding-commercial-a/disposition",
     repository,
@@ -641,7 +641,7 @@ test("AI finding disposition update is staged and enforces governed conversion",
   assert.equal(acceptedResponse.status, 200);
   assert.equal(acceptedResponse.body.item.humanDisposition, "accepted");
 
-  const convertResponse = handleApiRequest({
+  const convertResponse = await handleApiRequest({
     method: "POST",
     path: "/v1/tenants/tenant-commercial-sim/ai-findings/finding-commercial-a/disposition",
     repository,
@@ -659,10 +659,10 @@ test("AI finding disposition update is staged and enforces governed conversion",
   assert.equal(convertResponse.body.item.relatedIssueId, "issue-commercial-a");
 });
 
-test("AI finding disposition rejects invalid related issue linkage", () => {
+test("AI finding disposition rejects invalid related issue linkage", async () => {
   const repository = createMemoryRepository();
 
-  const response = handleApiRequest({
+  const response = await handleApiRequest({
     method: "POST",
     path: "/v1/tenants/tenant-commercial-sim/ai-findings/finding-commercial-a/disposition",
     repository,
@@ -679,10 +679,10 @@ test("AI finding disposition rejects invalid related issue linkage", () => {
   assert.equal(response.body.error, "forbidden");
 });
 
-test("malformed JSON request body returns 400 instead of crashing", () => {
+test("malformed JSON request body returns 400 instead of crashing", async () => {
   const repository = createMemoryRepository();
 
-  const response = handleApiRequest({
+  const response = await handleApiRequest({
     method: "POST",
     path: "/v1/tenants/tenant-commercial-sim/projects",
     repository,

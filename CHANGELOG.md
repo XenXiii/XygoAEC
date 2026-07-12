@@ -1,5 +1,23 @@
 # Changelog
 
+## Production-Readiness Phase 2 — Postgres Data Layer — 2026-07-12
+
+Target chosen: **managed Postgres**. Backend implemented; verified in CI (Postgres 16 service),
+not in the offline sandbox. Suite **193 → 194** (1 gated/skipped locally).
+
+- **Relational schema:** `infrastructure/migrations/postgres/0001_init.sql` — foreign keys,
+  per-tenant/child indexes, seq-ordered `audit_events`, optional RLS (commented).
+- **Backend:** `apps/api/src/repositories/postgres.js` implementing the repository contract; `pg`
+  is imported lazily (module loads without the driver); JSONB payload + promoted columns.
+  `XYGO_API_REPOSITORY_MODE=postgres`, `XYGO_API_PG_URL=...`.
+- **Async conversion:** repository→handler→server chain converted sync→async (harmless `await` on
+  the sync backends; real `await` for pg). Verified locally against memory/file/sqlite (all green).
+- **Gated conformance:** `apps/api/test/postgres-conformance.test.js` (skips unless
+  `XYGO_TEST_PG_URL`); CI `postgres` job runs it against a Postgres 16 service container.
+- **First dependency:** `pg` added (justified: production DB). Zero deps otherwise.
+- **Pending before cutover:** run migrations on the managed instance, backups/PITR + restore
+  drill, optional RLS, flip the prod repository mode. See `docs/audit/phase-2-data-layer-design.md`.
+
 ## Production-Readiness Slice B — Phase 1 Hardening — 2026-07-12
 
 Finished the Phase 1 hardening deferred by Slice A. Suite **185 → 193 passing**. Still zero

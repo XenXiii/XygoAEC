@@ -13,12 +13,12 @@ const TENANT_B = "tenant-residential-sim";
 
 // --- Shared helper unit coverage ---------------------------------------------
 
-test("extractStagedAuth reads the lowercase and title-case tenant header", () => {
+test("extractStagedAuth reads the lowercase and title-case tenant header", async () => {
   assert.equal(extractStagedAuth({ headers: { "x-staged-tenant-id": TENANT_A } }).tenantId, TENANT_A);
   assert.equal(extractStagedAuth({ headers: { "X-Staged-Tenant-Id": TENANT_A } }).tenantId, TENANT_A);
 });
 
-test("extractStagedAuth defaults the actor id and reads it when supplied", () => {
+test("extractStagedAuth defaults the actor id and reads it when supplied", async () => {
   assert.equal(extractStagedAuth({ headers: {} }).userId, "synthetic-user");
   assert.equal(
     extractStagedAuth({ headers: { "x-staged-user-id": "user-commercial-admin" } }).userId,
@@ -26,7 +26,7 @@ test("extractStagedAuth defaults the actor id and reads it when supplied", () =>
   );
 });
 
-test("extractStagedAuth only reads the query param when searchParams is provided", () => {
+test("extractStagedAuth only reads the query param when searchParams is provided", async () => {
   const searchParams = new URLSearchParams({ stagedTenantId: TENANT_A });
 
   // SSE transport passes searchParams -> query param is honored.
@@ -35,13 +35,13 @@ test("extractStagedAuth only reads the query param when searchParams is provided
   assert.equal(extractStagedAuth({ headers: {} }).tenantId, null);
 });
 
-test("canAccessTenant matches asserted tenant to requested tenant", () => {
+test("canAccessTenant matches asserted tenant to requested tenant", async () => {
   assert.equal(canAccessTenant({ headers: { "x-staged-tenant-id": TENANT_A }, tenantId: TENANT_A }), true);
   assert.equal(canAccessTenant({ headers: { "x-staged-tenant-id": TENANT_A }, tenantId: TENANT_B }), false);
   assert.equal(canAccessTenant({ headers: {}, tenantId: TENANT_A }), false);
 });
 
-test("REST access ignores the query param while the SSE stream honors it", () => {
+test("REST access ignores the query param while the SSE stream honors it", async () => {
   const searchParams = new URLSearchParams({ stagedTenantId: TENANT_A });
 
   // REST (no searchParams): a query param cannot grant access.
@@ -56,11 +56,11 @@ test("REST access ignores the query param while the SSE stream honors it", () =>
 // cannot silently graduate to production. If real tenant auth is added, update
 // these expectations deliberately (and check the activation-checklist item).
 
-test("ACTIVATION GATE: tenant access is self-asserted with no credential", () => {
+test("ACTIVATION GATE: tenant access is self-asserted with no credential", async () => {
   const repository = createMemoryRepository();
 
   // A caller reaches tenant A by simply asserting tenant A's id -- no token.
-  const asA = handleApiRequest({
+  const asA = await handleApiRequest({
     method: "GET",
     path: `/v1/tenants/${TENANT_A}/projects`,
     headers: { "x-staged-tenant-id": TENANT_A },
@@ -70,7 +70,7 @@ test("ACTIVATION GATE: tenant access is self-asserted with no credential", () =>
 
   // The SAME caller can freely reach tenant B just by changing the asserted id.
   // This is the documented isolation hole; it is only acceptable for staged data.
-  const asB = handleApiRequest({
+  const asB = await handleApiRequest({
     method: "GET",
     path: `/v1/tenants/${TENANT_B}/projects`,
     headers: { "x-staged-tenant-id": TENANT_B },
@@ -79,7 +79,7 @@ test("ACTIVATION GATE: tenant access is self-asserted with no credential", () =>
   assert.equal(asB.status, 200);
 
   // The only thing enforced is header/path agreement.
-  const mismatch = handleApiRequest({
+  const mismatch = await handleApiRequest({
     method: "GET",
     path: `/v1/tenants/${TENANT_A}/projects`,
     headers: { "x-staged-tenant-id": TENANT_B },
@@ -88,7 +88,7 @@ test("ACTIVATION GATE: tenant access is self-asserted with no credential", () =>
   assert.equal(mismatch.status, 403);
 
   // Absent assertion is denied (fail closed on missing scope).
-  const missing = handleApiRequest({
+  const missing = await handleApiRequest({
     method: "GET",
     path: `/v1/tenants/${TENANT_A}/projects`,
     headers: {},
@@ -97,7 +97,7 @@ test("ACTIVATION GATE: tenant access is self-asserted with no credential", () =>
   assert.equal(missing.status, 403);
 });
 
-test("ACTIVATION GATE: tenant isolation checklist item stays unchecked while auth is self-asserted", () => {
+test("ACTIVATION GATE: tenant isolation checklist item stays unchecked while auth is self-asserted", async () => {
   const checklistPath = path.resolve(process.cwd(), "docs/activation/activation-checklist.md");
   const checklist = fs.readFileSync(checklistPath, "utf8");
 

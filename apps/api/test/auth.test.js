@@ -136,7 +136,7 @@ test("resolveStagedPrincipal self-asserts tenant and defaults the role", () => {
 
 // --- route-level RBAC (principal injected) -----------------------------------
 
-function request({ method, path, principal, body }) {
+async function request({ method, path, principal, body }) {
   return handleApiRequest({
     method,
     path,
@@ -149,12 +149,12 @@ function request({ method, path, principal, body }) {
 
 const T = "tenant-commercial-sim";
 
-test("RBAC: read_only_auditor can read but cannot create", () => {
+test("RBAC: read_only_auditor can read but cannot create", async () => {
   const auditor = { userId: "a", tenantId: T, organizationRole: "read_only_auditor", projectRole: null, authenticated: true, staged: false };
 
-  assert.equal(request({ method: "GET", path: `/v1/tenants/${T}/projects`, principal: auditor }).status, 200);
+  assert.equal((await request({ method: "GET", path: `/v1/tenants/${T}/projects`, principal: auditor })).status, 200);
 
-  const create = request({
+  const create = await request({
     method: "POST",
     path: `/v1/tenants/${T}/issues`,
     principal: auditor,
@@ -164,9 +164,9 @@ test("RBAC: read_only_auditor can read but cannot create", () => {
   assert.match(create.body.message, /role_denied/);
 });
 
-test("RBAC: company_admin can create in-tenant", () => {
+test("RBAC: company_admin can create in-tenant", async () => {
   const admin = { userId: "a", tenantId: T, organizationRole: "company_admin", projectRole: null, authenticated: true, staged: false };
-  const create = request({
+  const create = await request({
     method: "POST",
     path: `/v1/tenants/${T}/issues`,
     principal: admin,
@@ -175,13 +175,13 @@ test("RBAC: company_admin can create in-tenant", () => {
   assert.equal(create.status, 201);
 });
 
-test("RBAC: principal from another tenant is denied (no cross-tenant)", () => {
+test("RBAC: principal from another tenant is denied (no cross-tenant)", async () => {
   const other = { userId: "a", tenantId: "tenant-residential-sim", organizationRole: "company_admin", projectRole: null, authenticated: true, staged: false };
-  assert.equal(request({ method: "GET", path: `/v1/tenants/${T}/projects`, principal: other }).status, 403);
+  assert.equal((await request({ method: "GET", path: `/v1/tenants/${T}/projects`, principal: other })).status, 403);
 });
 
-test("OIDC mode with no principal is unauthorized (401)", () => {
-  const res = handleApiRequest({
+test("OIDC mode with no principal is unauthorized (401)", async () => {
+  const res = await handleApiRequest({
     method: "GET",
     path: `/v1/tenants/${T}/projects`,
     repository: createMemoryRepository(),
@@ -192,9 +192,9 @@ test("OIDC mode with no principal is unauthorized (401)", () => {
   assert.equal(res.body.error, "unauthorized");
 });
 
-test("OIDC mode ignores self-asserted staged headers", () => {
+test("OIDC mode ignores self-asserted staged headers", async () => {
   // In OIDC mode a raw x-staged-tenant-id header must NOT grant access.
-  const res = handleApiRequest({
+  const res = await handleApiRequest({
     method: "GET",
     path: `/v1/tenants/${T}/projects`,
     headers: { "x-staged-tenant-id": T },

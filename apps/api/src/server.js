@@ -149,8 +149,8 @@ export function createServer({ env = process.env } = {}) {
       const body = chunks.length > 0 ? Buffer.concat(chunks).toString("utf8") : null;
 
       resolvePrincipalForRequest({ req, url, authConfig, jwks })
-        .then((principal) => {
-          const result = handleApiRequest({
+        .then(async (principal) => {
+          const result = await handleApiRequest({
             method: req.method,
             path: req.url ?? "/",
             headers: req.headers,

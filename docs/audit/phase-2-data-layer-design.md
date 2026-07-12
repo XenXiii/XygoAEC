@@ -1,8 +1,26 @@
 # Phase 2 — Data Layer Design (Postgres)
 
-_Design + decision gate. NOT yet implemented: a production database backend must be
-verified against a real Postgres, which this environment cannot run. Implementing an
-untested DB backend would violate the "test-backed, verify every claim" rule._
+**Status (2026-07-12): backend IMPLEMENTED, CI-verification pending.** Target chosen: **managed
+Postgres**. The relational schema, `postgres` repository backend, async repository/handler
+conversion, and a gated conformance suite are committed. The backend is **verified in CI** against
+a Postgres 16 service (`.github/workflows/ci.yml` → `postgres` job); it is **not** runnable in the
+offline dev sandbox, so it has not been exercised locally. Do not treat it as production-verified
+until the CI `postgres` job is green against the managed instance.
+
+Delivered:
+- `infrastructure/migrations/postgres/0001_init.sql` — relational schema (FKs, indexes, seq-ordered audit).
+- `apps/api/src/repositories/postgres.js` — same contract, lazy `pg` import, JSONB payload + promoted columns.
+- Repository/handler chain converted sync → **async** (verified locally against memory/file/sqlite: 193 pass).
+- `apps/api/test/postgres-conformance.test.js` — gated on `XYGO_TEST_PG_URL` (skips locally, runs in CI).
+- `XYGO_API_REPOSITORY_MODE=postgres`, `XYGO_API_PG_URL=...`; `pg` added as the first dependency.
+
+Still to do before production cutover: run migrations against the managed instance, enable
+backups/PITR + a rehearsed restore drill, optionally enable RLS, and flip
+`XYGO_API_REPOSITORY_MODE=postgres` in the production environment.
+
+---
+
+_Original design + decision gate below._
 
 ## Why this is gated
 

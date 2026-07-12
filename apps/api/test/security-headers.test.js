@@ -4,8 +4,8 @@ import assert from "node:assert/strict";
 import { handleApiRequest } from "../src/handlers.js";
 import { createMemoryRepository } from "../src/repositories/memory.js";
 
-test("API responses carry hardened security headers", () => {
-  const response = handleApiRequest({
+test("API responses carry hardened security headers", async () => {
+  const response = await handleApiRequest({
     method: "GET",
     path: "/v1/tenants/tenant-commercial-sim/projects",
     headers: { "x-staged-tenant-id": "tenant-commercial-sim" },

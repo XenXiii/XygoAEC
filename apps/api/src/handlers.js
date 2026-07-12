@@ -83,7 +83,7 @@ function authorize({ principal, tenantId, resource, action }) {
   return null;
 }
 
-function appendTenantAuditEvent({
+async function appendTenantAuditEvent({
   repository,
   tenantId,
   actorId,
@@ -93,7 +93,7 @@ function appendTenantAuditEvent({
   beforeStateRef = null,
   afterStateRef = null
 }) {
-  const existingEvents = repository.listAuditEventsByTenant(tenantId);
+  const existingEvents = await repository.listAuditEventsByTenant(tenantId);
   const previousHash = existingEvents.length > 0 ? existingEvents[existingEvents.length - 1].eventHash : null;
 
   const event = createAuditEvent({
@@ -109,7 +109,7 @@ function appendTenantAuditEvent({
     signingKey: auditSigningKey
   });
 
-  repository.appendAuditEvent(event);
+  await repository.appendAuditEvent(event);
 }
 
 // Collection resources share one shape: validate body -> tenant/parent guard ->
@@ -143,8 +143,8 @@ const collectionResources = [
       !parsed?.id || !parsed?.projectId || !parsed?.title || !parsed?.description
         ? "Issue id, projectId, title, and description are required."
         : null,
-    guard: ({ parsed, tenantId, repository }) => {
-      const project = repository.getProjectById(parsed.projectId);
+    guard: async ({ parsed, tenantId, repository }) => {
+      const project = await repository.getProjectById(parsed.projectId);
       return !project || project.tenantId !== tenantId ? "Issue creation requires an in-tenant project." : null;
     },
     build: (parsed, tenantId) => ({
@@ -170,8 +170,8 @@ const collectionResources = [
     list: (repository, tenantId) => repository.listRfisByTenant(tenantId),
     validate: (parsed) =>
       !parsed?.id || !parsed?.projectId || !parsed?.title ? "RFI id, projectId, and title are required." : null,
-    guard: ({ parsed, tenantId, repository }) => {
-      const project = repository.getProjectById(parsed.projectId);
+    guard: async ({ parsed, tenantId, repository }) => {
+      const project = await repository.getProjectById(parsed.projectId);
       return !project || project.tenantId !== tenantId ? "RFI creation requires an in-tenant project." : null;
     },
     build: (parsed, tenantId) => ({
@@ -198,8 +198,8 @@ const collectionResources = [
       !parsed?.id || !parsed?.projectId || !parsed?.jurisdictionProfile
         ? "Permit package id, projectId, and jurisdictionProfile are required."
         : null,
-    guard: ({ parsed, tenantId, repository }) => {
-      const project = repository.getProjectById(parsed.projectId);
+    guard: async ({ parsed, tenantId, repository }) => {
+      const project = await repository.getProjectById(parsed.projectId);
       return !project || project.tenantId !== tenantId
         ? "Permit package creation requires an in-tenant project."
         : null;
@@ -230,8 +230,8 @@ const collectionResources = [
       !parsed?.id || !parsed?.projectId || !parsed?.createdBy || !Array.isArray(parsed?.artifactRefs)
         ? "Review session id, projectId, createdBy, and artifactRefs are required."
         : null,
-    guard: ({ parsed, tenantId, repository }) => {
-      const project = repository.getProjectById(parsed.projectId);
+    guard: async ({ parsed, tenantId, repository }) => {
+      const project = await repository.getProjectById(parsed.projectId);
       return !project || project.tenantId !== tenantId
         ? "Review session creation requires an in-tenant project."
         : null;
@@ -259,8 +259,8 @@ const collectionResources = [
       !parsed?.id || !parsed?.projectId || !parsed?.artifactType || !parsed?.artifactId
         ? "AI review run id, projectId, artifactType, and artifactId are required."
         : null,
-    guard: ({ parsed, tenantId, repository }) => {
-      const project = repository.getProjectById(parsed.projectId);
+    guard: async ({ parsed, tenantId, repository }) => {
+      const project = await repository.getProjectById(parsed.projectId);
       return !project || project.tenantId !== tenantId
         ? "AI review run creation requires an in-tenant project."
         : null;
@@ -290,8 +290,8 @@ const collectionResources = [
       !parsed?.id || !parsed?.reviewRunId || !parsed?.category || !parsed?.title || !parsed?.description
         ? "AI finding id, reviewRunId, category, title, and description are required."
         : null,
-    guard: ({ parsed, tenantId, repository }) => {
-      const reviewRun = repository.getAiReviewRunById(parsed.reviewRunId);
+    guard: async ({ parsed, tenantId, repository }) => {
+      const reviewRun = await repository.getAiReviewRunById(parsed.reviewRunId);
       return !reviewRun || reviewRun.tenantId !== tenantId
         ? "AI finding creation requires an in-tenant review run."
         : null;
@@ -327,7 +327,7 @@ const collectionResourcesBySegment = new Map(
   collectionResources.map((resource) => [resource.segment, resource])
 );
 
-function handleCollectionCreate({ resource, body, tenantId, actorId, repository }) {
+async function handleCollectionCreate({ resource, body, tenantId, actorId, repository }) {
   const parsed = parseBody(body);
 
   const validationError = resource.validate(parsed);
@@ -335,15 +335,15 @@ function handleCollectionCreate({ resource, body, tenantId, actorId, repository 
     return badRequest(validationError);
   }
 
-  const guardError = resource.guard ? resource.guard({ parsed, tenantId, repository }) : null;
+  const guardError = resource.guard ? await resource.guard({ parsed, tenantId, repository }) : null;
   if (guardError) {
     return forbidden(guardError);
   }
 
   try {
-    const created = resource.create(repository, resource.build(parsed, tenantId));
+    const created = await resource.create(repository, resource.build(parsed, tenantId));
 
-    appendTenantAuditEvent({
+    await appendTenantAuditEvent({
       repository,
       tenantId,
       actorId,
@@ -362,9 +362,9 @@ function handleCollectionCreate({ resource, body, tenantId, actorId, repository 
   }
 }
 
-export function handleApiRequest(request) {
+export async function handleApiRequest(request) {
   try {
-    return routeApiRequest(request);
+    return await routeApiRequest(request);
   } catch (error) {
     if (error instanceof SyntaxError) {
       return badRequest("Malformed JSON request body.");
@@ -378,7 +378,7 @@ export function handleApiRequest(request) {
   }
 }
 
-function routeApiRequest({
+async function routeApiRequest({
   method,
   path,
   headers = {},
@@ -440,7 +440,7 @@ function routeApiRequest({
       }
 
       if (method === "POST") {
-        return handleCollectionCreate({
+        return await handleCollectionCreate({
           resource,
           body,
           tenantId,
@@ -450,7 +450,7 @@ function routeApiRequest({
       }
 
       return json(200, {
-        items: resource.list(repository, tenantId),
+        items: await resource.list(repository, tenantId),
         staged: true
       });
     }
@@ -468,13 +468,13 @@ function routeApiRequest({
     }
 
     const findingId = parts[4];
-    const finding = repository.getAiFindingById(findingId);
+    const finding = await repository.getAiFindingById(findingId);
 
     if (!finding) {
       return notFound("AI finding not found.");
     }
 
-    const reviewRun = repository.getAiReviewRunById(finding.reviewRunId);
+    const reviewRun = await repository.getAiReviewRunById(finding.reviewRunId);
     if (!reviewRun || reviewRun.tenantId !== tenantId) {
       return forbidden("AI finding disposition requires in-tenant access.");
     }
@@ -485,20 +485,21 @@ function routeApiRequest({
     }
 
     if (parsed.relatedIssueId) {
-      const relatedIssue = repository.listIssuesByTenant(tenantId).find((issue) => issue.id === parsed.relatedIssueId);
+      const tenantIssues = await repository.listIssuesByTenant(tenantId);
+      const relatedIssue = tenantIssues.find((issue) => issue.id === parsed.relatedIssueId);
       if (!relatedIssue) {
         return forbidden("Related issue must exist in-tenant.");
       }
     }
 
     try {
-      const updated = repository.setAiFindingDisposition({
+      const updated = await repository.setAiFindingDisposition({
         findingId,
         nextDisposition: parsed.nextDisposition,
         relatedIssueId: parsed.relatedIssueId ?? null
       });
 
-      appendTenantAuditEvent({
+      await appendTenantAuditEvent({
         repository,
         tenantId,
         actorId: effectivePrincipal.userId,
@@ -529,13 +530,19 @@ function routeApiRequest({
       return denied;
     }
 
+    const [dashProjects, dashIssues, dashPermits] = await Promise.all([
+      repository.listProjectsByTenant(tenantId),
+      repository.listIssuesByTenant(tenantId),
+      repository.listPermitPackagesByTenant(tenantId)
+    ]);
+
     return json(200, {
       item: buildExecutivePortfolioView({
         tenantId,
-        projects: repository.listProjectsByTenant(tenantId),
-        issues: repository.listIssuesByTenant(tenantId),
+        projects: dashProjects,
+        issues: dashIssues,
         financeEvents: syntheticGovernanceEvents.filter((event) => event.tenantId === tenantId),
-        permitPackages: repository.listPermitPackagesByTenant(tenantId)
+        permitPackages: dashPermits
       }),
       staged: true
     });
@@ -548,7 +555,7 @@ function routeApiRequest({
     }
 
     return json(200, {
-      items: repository.listAuditEventsByTenant(tenantId),
+      items: await repository.listAuditEventsByTenant(tenantId),
       staged: true
     });
   }
@@ -559,10 +566,9 @@ function routeApiRequest({
       return denied;
     }
 
+    const auditEvents = await repository.listAuditEventsByTenant(tenantId);
     return json(200, {
-      item: buildAuditVerificationReport(repository.listAuditEventsByTenant(tenantId), {
-        signingKey: auditSigningKey
-      }),
+      item: buildAuditVerificationReport(auditEvents, { signingKey: auditSigningKey }),
       staged: true
     });
   }

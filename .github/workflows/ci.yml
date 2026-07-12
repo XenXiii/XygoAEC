@@ -23,8 +23,38 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-      # No dependency install step: the project has zero third-party dependencies.
+      # The core suite needs no dependencies (pg is imported lazily and its
+      # conformance test skips unless XYGO_TEST_PG_URL is set).
       - name: Run full test suite
         run: npm test
       - name: Verify audit chain
         run: npm run verify:audit
+
+  postgres:
+    name: Postgres backend conformance
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: xygo
+          POSTGRES_PASSWORD: xygo
+          POSTGRES_DB: xygo_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xygo"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.x"
+      - name: Install pg driver
+        run: npm install --no-save pg
+      - name: Run postgres conformance suite
+        env:
+          XYGO_TEST_PG_URL: postgres://xygo:xygo@localhost:5432/xygo_test
+        run: node --test apps/api/test/postgres-conformance.test.js
