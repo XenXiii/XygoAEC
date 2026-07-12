@@ -1,5 +1,23 @@
 # Changelog
 
+## Production-Readiness Slice C — Reliability + Observability — 2026-07-12
+
+Phase 3 (reliability) + Phase 4 (observability basics), dependency-free and live-verified.
+Suite **194 → 203** (1 gated-skip).
+
+- **Outbox + worker:** `apps/api/src/reliability/outbox.js` (backoff, dead-letter, idempotent) +
+  `apps/worker/src/worker.js` (interval runner, staged no-op delivery, graceful stop). API enqueues
+  a domain event on create.
+- **Idempotency:** `Idempotency-Key` replays the cached 2xx response instead of double-writing
+  (`reliability/idempotency.js`).
+- **Graceful shutdown + readiness:** SIGTERM/SIGINT drain (`server.close`), `/ready` → 503 while
+  draining, new work rejected with 503; `/health` stays liveness.
+- **Structured logging:** JSON logger + per-request `x-request-id` + access log.
+- **Metrics:** `/metrics` Prometheus exposition (request counts, duration histogram, rate-limit).
+- **Tests:** `telemetry.test.js` (+2), `reliability.test.js` (+7).
+- **Carry-forward:** distributed tracing (OTel SDK), dashboards/alerting/runbooks/SLOs;
+  cross-process durable outbox (Postgres table); Redis-backed idempotency/rate-limit.
+
 ## Production-Readiness Phase 2 — Postgres Data Layer — 2026-07-12
 
 Target chosen: **managed Postgres**. Backend implemented; verified in CI (Postgres 16 service),

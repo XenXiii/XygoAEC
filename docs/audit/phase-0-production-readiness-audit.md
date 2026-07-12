@@ -333,3 +333,36 @@ Finished the Phase 1 hardening that Slice A deferred. Suite **185 → 193 passin
 ### Phase 2 (Postgres) — designed, NOT implemented
 Blocked on a real Postgres (cannot verify here) + a target decision. See
 `docs/audit/phase-2-data-layer-design.md`. **Decision required:** managed vs self-hosted vs defer.
+
+---
+
+## Slice C — EXECUTED (2026-07-12): Reliability (Phase 3) + Observability (Phase 4)
+
+All dependency-free and test-backed; live-verified. Suite **194 → 203** (1 gated-skip).
+
+### Delivered
+- **Outbox + worker (B13):** `apps/api/src/reliability/outbox.js` (enqueue → drain, exponential
+  backoff, max-attempts dead-letter, idempotent processing) + `apps/worker/src/worker.js` (interval
+  runner, staged no-op delivery = structured log, graceful stop). API enqueues a domain event on
+  every create. *In-memory/single-process; crash-durable cross-process delivery = the Postgres
+  outbox table (Phase 2).*
+- **Idempotency (B12):** `Idempotency-Key` on writes replays the cached 2xx response instead of
+  double-writing (`reliability/idempotency.js`). Live: 2 identical POSTs → 1 record.
+- **Graceful shutdown + readiness (B11):** SIGTERM/SIGINT drain via `server.close`, `/ready` returns
+  503 while draining, new work rejected with 503. `/health` stays liveness. Live-verified.
+- **Structured logging (B8):** JSON logger (`telemetry/logger.js`); per-request `x-request-id` +
+  access log (method/path/status/durationMs/tenant).
+- **Metrics (B8):** `telemetry/metrics.js` + `/metrics` Prometheus exposition (request counts by
+  method/status, duration histogram, rate-limit counter). OTel remains a documented seam (SDK +
+  collector needed to verify — not pulled).
+
+### Revised readiness (post-Slice C)
+| Dimension | Was (post-B) | Now |
+| --- | --- | --- |
+| Reliability | 25% | **65%** | outbox/worker/idempotency/drain/readiness; needs cross-process durability + failure drills |
+| Operations | 8% | **50%** | structured logs + metrics + request ids; no tracing/dashboards/alerting/runbooks yet |
+| Production | 30% | **~45%** | trust + data + reliability + basic ops; observability depth, secrets, live IdP still open |
+
+### NOT done (carry forward)
+Distributed tracing (OTel SDK), dashboards, alerting, runbooks, SLOs; cross-process/crash-durable
+outbox (needs the Postgres table); secret management; multi-instance idempotency/rate-limit (Redis).

@@ -1,10 +1,32 @@
 import { buildExecutivePortfolioView, buildTransferQueue } from "../../../packages/dashboards/src/index.js";
-import { buildAuditVerificationReport, createAuditEvent } from "../../../packages/audit/src/foundation.js";
+import { buildAuditVerificationReport, createAuditEvent, createOutboxEvent } from "../../../packages/audit/src/foundation.js";
 import { syntheticGovernanceEvents, syntheticTransferPackages } from "../../../packages/test-fixtures/src/synthetic-tenants.js";
 import { createRepositoryFromEnv } from "./repositories/index.js";
 import { canPerform } from "../../../packages/authorization/src/policy.js";
 import { resolveStagedPrincipal } from "./auth/principal.js";
 import { baseResponseHeaders } from "./http/headers.js";
+import { sharedOutbox } from "./reliability/outbox.js";
+import { createIdempotencyStore, idempotencyKeyFor } from "./reliability/idempotency.js";
+
+const sharedIdempotency = createIdempotencyStore();
+
+// Replay a cached response for a repeated Idempotency-Key; otherwise compute and
+// cache successful (2xx) writes so a client retry does not double-write.
+async function withIdempotency({ idempotency, clientKey, tenantId, path, compute }) {
+  if (!clientKey) {
+    return compute();
+  }
+  const key = idempotencyKeyFor({ tenantId, path, clientKey });
+  const cached = idempotency.get(key);
+  if (cached) {
+    return cached;
+  }
+  const result = await compute();
+  if (result.status >= 200 && result.status < 300) {
+    idempotency.set(key, result);
+  }
+  return result;
+}
 
 const defaultRepository = createRepositoryFromEnv();
 
@@ -327,7 +349,7 @@ const collectionResourcesBySegment = new Map(
   collectionResources.map((resource) => [resource.segment, resource])
 );
 
-async function handleCollectionCreate({ resource, body, tenantId, actorId, repository }) {
+async function handleCollectionCreate({ resource, body, tenantId, actorId, repository, outbox }) {
   const parsed = parseBody(body);
 
   const validationError = resource.validate(parsed);
@@ -352,6 +374,16 @@ async function handleCollectionCreate({ resource, body, tenantId, actorId, repos
       resourceId: created.id,
       afterStateRef: resource.audit.afterStateRef(created)
     });
+
+    // Enqueue a durable domain event for async processing (worker drains it).
+    outbox.enqueue(
+      createOutboxEvent({
+        eventType: resource.audit.action,
+        aggregateType: resource.audit.resourceType,
+        aggregateId: created.id,
+        tenantId
+      })
+    );
 
     return json(201, {
       item: created,
@@ -385,7 +417,9 @@ async function routeApiRequest({
   body = null,
   repository = defaultRepository,
   principal = null,
-  authConfig = { mode: "staged" }
+  authConfig = { mode: "staged" },
+  outbox = sharedOutbox,
+  idempotency = sharedIdempotency
 }) {
   if (!["GET", "POST"].includes(method)) {
     return json(405, {
@@ -440,12 +474,20 @@ async function routeApiRequest({
       }
 
       if (method === "POST") {
-        return await handleCollectionCreate({
-          resource,
-          body,
+        return await withIdempotency({
+          idempotency,
+          clientKey: headers["idempotency-key"] ?? headers["Idempotency-Key"],
           tenantId,
-          actorId: effectivePrincipal.userId,
-          repository
+          path,
+          compute: () =>
+            handleCollectionCreate({
+              resource,
+              body,
+              tenantId,
+              actorId: effectivePrincipal.userId,
+              repository,
+              outbox
+            })
         });
       }
 
