@@ -4,19 +4,18 @@ import { syntheticGovernanceEvents, syntheticTransferPackages } from "../../../p
 import { createRepositoryFromEnv } from "./repositories/index.js";
 import { canPerform } from "../../../packages/authorization/src/policy.js";
 import { resolveStagedPrincipal } from "./auth/principal.js";
+import { baseResponseHeaders } from "./http/headers.js";
 
 const defaultRepository = createRepositoryFromEnv();
+
+// When set (production), audit events are HMAC-signed → tamper-proof. When unset
+// (staged), the chain remains tamper-evident only. See docs/security.
+const auditSigningKey = process.env.XYGO_AUDIT_SIGNING_KEY ?? null;
 
 function json(status, body) {
   return {
     status,
-    headers: {
-      "content-type": "application/json",
-      "x-xygo-staged-mode": "true",
-      "access-control-allow-origin": "*",
-      "access-control-allow-headers": "content-type,x-staged-tenant-id,x-staged-user-id",
-      "access-control-allow-methods": "GET,POST,OPTIONS"
-    },
+    headers: baseResponseHeaders({ "content-type": "application/json" }),
     body
   };
 }
@@ -106,7 +105,8 @@ function appendTenantAuditEvent({
     resourceId,
     beforeStateRef,
     afterStateRef,
-    previousHash
+    previousHash,
+    signingKey: auditSigningKey
   });
 
   repository.appendAuditEvent(event);
@@ -560,7 +560,9 @@ function routeApiRequest({
     }
 
     return json(200, {
-      item: buildAuditVerificationReport(repository.listAuditEventsByTenant(tenantId)),
+      item: buildAuditVerificationReport(repository.listAuditEventsByTenant(tenantId), {
+        signingKey: auditSigningKey
+      }),
       staged: true
     });
   }

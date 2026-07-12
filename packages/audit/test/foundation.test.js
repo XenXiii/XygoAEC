@@ -179,3 +179,68 @@ test("audit hashing is independent of input key order", () => {
 
   assert.equal(reordered.eventHash, forward.eventHash);
 });
+
+test("signed audit events carry an HMAC signature and verify with the key", () => {
+  const key = "test-signing-key";
+  const eventA = createAuditEvent({
+    tenantId: "tenant-a",
+    action: "project.created",
+    resourceType: "project",
+    resourceId: "project-a",
+    signingKey: key
+  });
+
+  assert.ok(typeof eventA.signature === "string" && eventA.signature.length === 64);
+  assert.equal(verifyAuditChain([eventA], { signingKey: key }).valid, true);
+});
+
+test("signed chain detects a forged signature (tamper-proof)", () => {
+  const key = "test-signing-key";
+  const eventA = createAuditEvent({
+    tenantId: "tenant-a",
+    action: "project.created",
+    resourceType: "project",
+    resourceId: "project-a",
+    signingKey: key
+  });
+
+  // Attacker rewrites content AND recomputes the hash, but cannot forge the HMAC
+  // without the key.
+  const rehashed = createAuditEvent({
+    ...eventA,
+    resourceId: "project-hijacked",
+    eventId: eventA.eventId,
+    correlationId: eventA.correlationId,
+    requestId: eventA.requestId,
+    timestamp: eventA.timestamp
+  });
+  const forged = { ...rehashed, signature: eventA.signature };
+
+  const result = verifyAuditChain([forged], { signingKey: key });
+  assert.equal(result.valid, false);
+  assert.equal(result.reason, "signature_mismatch");
+});
+
+test("verification flags a missing signature when a key is expected", () => {
+  const unsigned = createAuditEvent({
+    tenantId: "tenant-a",
+    action: "project.created",
+    resourceType: "project",
+    resourceId: "project-a"
+  });
+
+  const result = verifyAuditChain([unsigned], { signingKey: "k" });
+  assert.equal(result.valid, false);
+  assert.equal(result.reason, "signature_missing");
+});
+
+test("unsigned verification remains backward compatible", () => {
+  const eventA = createAuditEvent({
+    tenantId: "tenant-a",
+    action: "project.created",
+    resourceType: "project",
+    resourceId: "project-a"
+  });
+  assert.equal(verifyAuditChain([eventA]).valid, true);
+  assert.equal(eventA.signature, undefined);
+});

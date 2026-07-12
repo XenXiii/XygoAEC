@@ -55,14 +55,24 @@ export function createAuditEvent(input) {
     .update(stableSerialize({ ...baseEvent, previousHash }))
     .digest("hex");
 
-  return {
+  const event = {
     ...baseEvent,
     previousHash,
     eventHash
   };
+
+  // Optional keyed signature makes the chain tamper-PROOF (not merely
+  // tamper-evident): without the secret key an attacker cannot forge a valid
+  // signature after recomputing hashes. The signature covers the event hash,
+  // which already commits to all content + the previous link.
+  if (input.signingKey) {
+    event.signature = crypto.createHmac("sha256", input.signingKey).update(eventHash).digest("hex");
+  }
+
+  return event;
 }
 
-export function verifyAuditChain(events) {
+export function verifyAuditChain(events, { signingKey = null } = {}) {
   let previousHash = null;
 
   for (const event of events) {
@@ -72,7 +82,8 @@ export function verifyAuditChain(events) {
       eventId: event.eventId,
       correlationId: event.correlationId,
       requestId: event.requestId,
-      timestamp: event.timestamp
+      timestamp: event.timestamp,
+      signingKey
     });
 
     if (recalculated.eventHash !== event.eventHash) {
@@ -81,6 +92,15 @@ export function verifyAuditChain(events) {
         reason: "hash_mismatch",
         eventId: event.eventId
       };
+    }
+
+    if (signingKey) {
+      if (!event.signature) {
+        return { valid: false, reason: "signature_missing", eventId: event.eventId };
+      }
+      if (recalculated.signature !== event.signature) {
+        return { valid: false, reason: "signature_mismatch", eventId: event.eventId };
+      }
     }
 
     previousHash = event.eventHash;
@@ -110,13 +130,14 @@ export function createOutboxEvent(input) {
   };
 }
 
-export function buildAuditVerificationReport(events) {
-  const result = verifyAuditChain(events);
+export function buildAuditVerificationReport(events, { signingKey = null } = {}) {
+  const result = verifyAuditChain(events, { signingKey });
   return {
     valid: result.valid,
     reason: result.reason ?? null,
     eventId: result.eventId ?? null,
     checkedEventCount: events.length,
+    signed: Boolean(signingKey),
     staged: true
   };
 }

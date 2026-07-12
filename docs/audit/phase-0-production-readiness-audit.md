@@ -302,3 +302,34 @@ depends on this slice. Reversible, test-backed, no new product surface.
 timeouts + security headers + audit MAC (closes B7/B9), then the Postgres relational schema with
 FKs/indexes/migrations and the `postgres` repository backend (B5/B6), extending the conformance
 harness to the new backend.
+
+---
+
+## Slice B — EXECUTED (2026-07-12)
+
+Finished the Phase 1 hardening that Slice A deferred. Suite **185 → 193 passing**.
+
+### Delivered (tests + live-verified)
+- **Rate limiting (B7):** fixed-window limiter (`apps/api/src/http/rate-limit.js`) enforced in the
+  server; 429 + `Retry-After`/`X-RateLimit-*`. Live: `max=3` → req 3 returns 429. Configurable via
+  `XYGO_RATE_LIMIT_MAX`/`_WINDOW_MS`. *Limit: in-memory per-process; multi-instance needs Redis.*
+- **Body-size limit (B7):** `XYGO_MAX_BODY_BYTES` (default 1 MiB); oversized → 413. Live-verified.
+- **Request timeout (B7):** `XYGO_REQUEST_TIMEOUT_MS` (default 15s); non-stream requests → 408.
+- **Security headers:** CSP/HSTS/X-Content-Type-Options/X-Frame-Options/Referrer-Policy/no-store on
+  all API + SSE responses (`apps/api/src/http/headers.js`). Live-verified on the wire.
+- **Audit tamper-proofing (B9):** optional HMAC-SHA256 `signature` over the event hash
+  (`XYGO_AUDIT_SIGNING_KEY`). With a key the chain is tamper-**proof** (forged signature →
+  `signature_mismatch`); without, tamper-evident as before (backward compatible). Verify report now
+  includes `signed`. Live: `verify → valid, signed:true`.
+
+### Revised readiness (post-Slice B)
+| Dimension | Was (post-A) | Now |
+| --- | --- | --- |
+| Security | 40% | **62%** | rate-limit/headers/timeout/body-cap + tamper-proof audit; secrets mgmt still missing |
+| Reliability | 15% | **25%** | request bounds added; outbox/workers/graceful-shutdown still pending |
+| Data Integrity | 25% | **35%** | tamper-proof audit; relational DB still pending (Phase 2) |
+| Production | 22% | **30%** | trust layer hardened; data/ops/reliability still blocking |
+
+### Phase 2 (Postgres) — designed, NOT implemented
+Blocked on a real Postgres (cannot verify here) + a target decision. See
+`docs/audit/phase-2-data-layer-design.md`. **Decision required:** managed vs self-hosted vs defer.

@@ -1,5 +1,23 @@
 # Changelog
 
+## Production-Readiness Slice B — Phase 1 Hardening — 2026-07-12
+
+Finished the Phase 1 hardening deferred by Slice A. Suite **185 → 193 passing**. Still zero
+third-party dependencies.
+
+- **Rate limiting:** fixed-window limiter (`apps/api/src/http/rate-limit.js`), 429 + `Retry-After`
+  / `X-RateLimit-*`; `XYGO_RATE_LIMIT_MAX`/`_WINDOW_MS`. (In-memory per-process; Redis for multi-instance.)
+- **Request bounds:** body-size cap (`XYGO_MAX_BODY_BYTES`, default 1 MiB → 413) and request
+  timeout (`XYGO_REQUEST_TIMEOUT_MS`, default 15s → 408).
+- **Security headers:** CSP/HSTS/nosniff/frame-deny/referrer/no-store on all responses
+  (`apps/api/src/http/headers.js`).
+- **Audit tamper-proofing:** optional HMAC-SHA256 signature over the event hash
+  (`XYGO_AUDIT_SIGNING_KEY`); tamper-proof when keyed, tamper-evident and backward-compatible when
+  not. Verify report gains `signed`.
+- **Tests:** `rate-limit.test.js` (+3), `security-headers.test.js` (+1), audit MAC (+4).
+- **Phase 2 (Postgres):** designed only (`docs/audit/phase-2-data-layer-design.md`) — needs a real
+  Postgres to verify + a target decision; not implemented.
+
 ## Production-Readiness Slice A — Trust Layer + CI — 2026-07-12
 
 Phase 0 audit (`docs/audit/phase-0-production-readiness-audit.md`) then the approved Slice A:
