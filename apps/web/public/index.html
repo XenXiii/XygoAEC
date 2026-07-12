@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Xygo Staged Control Room</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <div class="banner" role="note">STAGED / SIMULATED DATA ONLY</div>
+    <header class="shell-header">
+      <div>
+        <p class="eyebrow">Xygo AI AEC OS</p>
+        <h1>Control Room</h1>
+        <p class="subtitle">Tenant-scoped staged operations for projects, reviews, permits, and AI findings.</p>
+      </div>
+      <form class="controls" id="controls">
+        <label>
+          Tenant
+          <select id="tenant-select" name="tenant">
+            <option value="tenant-commercial-sim">Commercial Simulation</option>
+            <option value="tenant-residential-sim">Residential Simulation</option>
+          </select>
+        </label>
+        <label>
+          API Base URL
+          <input id="api-base-url" name="apiBaseUrl" type="url" value="http://127.0.0.1:3000">
+        </label>
+        <button type="submit">Refresh</button>
+      </form>
+    </header>
+
+    <main class="layout" id="main-content" tabindex="-1">
+      <section aria-labelledby="summary-heading" class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Executive Summary</p>
+            <h2 id="summary-heading">Portfolio Health</h2>
+          </div>
+          <p class="live-indicator" id="live-indicator" aria-live="polite">Live updates disconnected</p>
+        </div>
+        <div class="summary-grid" id="summary-grid" aria-live="polite"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="activity-heading">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Workflow</p>
+            <h2 id="activity-heading">Operational Boards</h2>
+          </div>
+        </div>
+        <div class="status-row" id="status-row" aria-live="polite"></div>
+        <div class="board-grid" id="board-grid"></div>
+      </section>
+    </main>
+
+    <template id="card-template">
+      <article class="metric-card">
+        <span class="metric-label"></span>
+        <strong class="metric-value"></strong>
+      </article>
+    </template>
+
+    <template id="board-template">
+      <section class="board">
+        <header class="board-header">
+          <h3></h3>
+          <span class="count-pill"></span>
+        </header>
+        <div class="board-body"></div>
+      </section>
+    </template>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

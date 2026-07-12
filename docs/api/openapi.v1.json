@@ -1,0 +1,531 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Xygo Staged API",
+    "version": "0.1.0-staged"
+  },
+  "components": {
+    "schemas": {
+      "ErrorEnvelope": {
+        "type": "object",
+        "required": ["error", "message", "staged"],
+        "properties": {
+          "error": { "type": "string" },
+          "message": { "type": "string" },
+          "staged": { "type": "boolean" }
+        }
+      },
+      "Project": {
+        "type": "object",
+        "required": ["id", "tenantId", "name", "status", "staged"],
+        "properties": {
+          "id": { "type": "string" },
+          "tenantId": { "type": "string" },
+          "name": { "type": "string" },
+          "status": { "type": "string" },
+          "staged": { "type": "boolean" }
+        }
+      },
+      "AuditEvent": {
+        "type": "object",
+        "required": ["eventId", "tenantId", "action", "resourceType", "resourceId", "eventHash", "staged"],
+        "properties": {
+          "eventId": { "type": "string" },
+          "tenantId": { "type": "string" },
+          "actorType": { "type": "string" },
+          "actorId": { "type": "string" },
+          "action": { "type": "string" },
+          "resourceType": { "type": "string" },
+          "resourceId": { "type": "string" },
+          "beforeStateRef": { "type": ["string", "null"] },
+          "afterStateRef": { "type": ["string", "null"] },
+          "previousHash": { "type": ["string", "null"] },
+          "eventHash": { "type": "string" },
+          "timestamp": { "type": "string" },
+          "staged": { "type": "boolean" }
+        }
+      },
+      "AuditVerificationReport": {
+        "type": "object",
+        "required": ["valid", "checkedEventCount", "staged"],
+        "properties": {
+          "valid": { "type": "boolean" },
+          "reason": { "type": ["string", "null"] },
+          "eventId": { "type": ["string", "null"] },
+          "checkedEventCount": { "type": "integer" },
+          "staged": { "type": "boolean" }
+        }
+      }
+    },
+    "securitySchemes": {
+      "stagedTenantHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-staged-tenant-id",
+        "description": "Self-asserted staged tenant scope. Must equal the {tenantId} path segment or the request is rejected with 403. STAGED ONLY: this is not authenticated and must be replaced with real tenant authn/authz before production."
+      },
+      "stagedTenantQuery": {
+        "type": "apiKey",
+        "in": "query",
+        "name": "stagedTenantId",
+        "description": "Query-param equivalent of x-staged-tenant-id for the SSE stream, where EventSource cannot set request headers. Same staged, unauthenticated scope semantics."
+      },
+      "stagedUserHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-staged-user-id",
+        "description": "Optional synthetic actor id recorded on audit events. Defaults to \"synthetic-user\" when omitted."
+      }
+    }
+  },
+  "security": [
+    { "stagedTenantHeader": [] }
+  ],
+  "servers": [
+    {
+      "url": "http://127.0.0.1:3000",
+      "description": "Local staged server"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Staged health check",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "ok"
+          }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/projects": {
+      "get": {
+        "summary": "List staged projects for a tenant",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "project list"
+          },
+          "403": {
+            "description": "tenant mismatch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/dashboard/executive": {
+      "get": {
+        "summary": "Return staged executive dashboard summary",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "executive summary"
+          }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/issues": {
+      "get": {
+        "summary": "List staged coordination issues for a tenant",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "issue list"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a staged coordination issue",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "issue created"
+          },
+          "403": {
+            "description": "cross-tenant or invalid project"
+          }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/rfis": {
+      "get": {
+        "summary": "List staged RFIs for a tenant",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "RFI list"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a staged RFI",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "RFI created"
+          },
+          "403": {
+            "description": "cross-tenant or invalid project"
+          }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/permits": {
+      "get": {
+        "summary": "List staged permit packages for a tenant",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "permit package list"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a staged permit package",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "permit package created"
+          },
+          "403": {
+            "description": "cross-tenant or invalid project"
+          }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/review-sessions": {
+      "get": {
+        "summary": "List staged review sessions for a tenant",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "review session list"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a staged review session",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "review session created"
+          },
+          "403": {
+            "description": "cross-tenant or invalid project"
+          }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/ai-review-runs": {
+      "get": {
+        "summary": "List staged AI review runs for a tenant",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "AI review run list"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a staged AI review run",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "AI review run created"
+          },
+          "403": {
+            "description": "cross-tenant or invalid project"
+          }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/ai-findings": {
+      "get": {
+        "summary": "List staged AI findings for a tenant",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "AI finding list"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a staged AI finding",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "AI finding created"
+          },
+          "403": {
+            "description": "cross-tenant or invalid review run"
+          }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/ai-findings/{findingId}/disposition": {
+      "post": {
+        "summary": "Update staged human disposition for an AI finding",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "findingId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "AI finding disposition updated"
+          },
+          "403": {
+            "description": "cross-tenant or invalid related issue"
+          }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/events/stream": {
+      "get": {
+        "summary": "Open staged tenant event stream",
+        "security": [
+          { "stagedTenantQuery": [] }
+        ],
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stagedTenantId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE stream"
+          },
+          "403": {
+            "description": "tenant mismatch"
+          }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/audit-events": {
+      "get": {
+        "summary": "List staged tenant audit events",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "audit event list"
+          }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/audit-events/verify": {
+      "get": {
+        "summary": "Verify staged tenant audit chain",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "audit verification report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditVerificationReport"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/transfers": {
+      "get": {
+        "summary": "Return staged transfer queue summary",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "transfer queue"
+          }
+        }
+      }
+    }
+  }
+}

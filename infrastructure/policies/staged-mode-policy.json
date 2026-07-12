@@ -1,0 +1,27 @@
+{
+  "policyVersion": 1,
+  "stagedModeDefault": true,
+  "failClosed": true,
+  "allowDocumentationRetrievalOnly": true,
+  "denyOutboundWrites": true,
+  "blockedHostnameFragments": [
+    "autodesk.com",
+    "procore.com",
+    "trimble.com",
+    "microsoft.com",
+    "office.com",
+    "quickbooks.com",
+    "intuit.com",
+    "prod",
+    "production",
+    "live"
+  ],
+  "blockedCredentialPatterns": [
+    "sk_live_",
+    "prod_",
+    "Bearer ",
+    "oauth",
+    "client_secret",
+    "refresh_token"
+  ]
+}

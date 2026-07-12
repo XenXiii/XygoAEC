@@ -1,0 +1,11 @@
+version: "3.9"
+
+services:
+  note:
+    image: alpine:3.22
+    command:
+      [
+        "sh",
+        "-c",
+        "echo 'Xygo staged foundation only. No live services are enabled in Phase 1.' && sleep infinity"
+      ]

@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+
+# Staged runtime data stores (regenerated from seed at runtime)
+infrastructure/staged-data/api-store.json
+infrastructure/staged-data/api-store.sqlite
+infrastructure/staged-data/*.tmp
+
+# Harness / workspace state
+.openclaw/
+
+# Logs and temp files
+*.log
+*.tmp
