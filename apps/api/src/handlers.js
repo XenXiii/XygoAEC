@@ -2,7 +2,8 @@ import { buildExecutivePortfolioView, buildTransferQueue } from "../../../packag
 import { buildAuditVerificationReport, createAuditEvent } from "../../../packages/audit/src/foundation.js";
 import { syntheticGovernanceEvents, syntheticTransferPackages } from "../../../packages/test-fixtures/src/synthetic-tenants.js";
 import { createRepositoryFromEnv } from "./repositories/index.js";
-import { canAccessTenant, extractStagedAuth } from "./staged-auth.js";
+import { canPerform } from "../../../packages/authorization/src/policy.js";
+import { resolveStagedPrincipal } from "./auth/principal.js";
 
 const defaultRepository = createRepositoryFromEnv();
 
@@ -60,14 +61,33 @@ function splitPath(pathname) {
   return pathname.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
 }
 
-function requireTenantAccess(headers, tenantId) {
-  return canAccessTenant({ headers, tenantId });
+// Authorization gate: the principal's tenant must match the path tenant, and the
+// principal's role must be permitted for (resource, action) by the RBAC matrix.
+function authorize({ principal, tenantId, resource, action }) {
+  if (!principal?.tenantId || principal.tenantId !== tenantId) {
+    return forbidden();
+  }
+
+  const decision = canPerform({
+    resource,
+    action,
+    tenantId: principal.tenantId,
+    resourceTenantId: tenantId,
+    organizationRole: principal.organizationRole,
+    projectRole: principal.projectRole
+  });
+
+  if (!decision.allowed) {
+    return forbidden(`Authorization denied: ${decision.reason}.`);
+  }
+
+  return null;
 }
 
 function appendTenantAuditEvent({
   repository,
   tenantId,
-  headers,
+  actorId,
   action,
   resourceType,
   resourceId,
@@ -76,12 +96,11 @@ function appendTenantAuditEvent({
 }) {
   const existingEvents = repository.listAuditEventsByTenant(tenantId);
   const previousHash = existingEvents.length > 0 ? existingEvents[existingEvents.length - 1].eventHash : null;
-  const auth = extractStagedAuth({ headers });
 
   const event = createAuditEvent({
     tenantId,
     actorType: "user",
-    actorId: auth.userId,
+    actorId: actorId ?? "synthetic-user",
     action,
     resourceType,
     resourceId,
@@ -308,7 +327,7 @@ const collectionResourcesBySegment = new Map(
   collectionResources.map((resource) => [resource.segment, resource])
 );
 
-function handleCollectionCreate({ resource, body, tenantId, headers, repository }) {
+function handleCollectionCreate({ resource, body, tenantId, actorId, repository }) {
   const parsed = parseBody(body);
 
   const validationError = resource.validate(parsed);
@@ -327,7 +346,7 @@ function handleCollectionCreate({ resource, body, tenantId, headers, repository 
     appendTenantAuditEvent({
       repository,
       tenantId,
-      headers,
+      actorId,
       action: resource.audit.action,
       resourceType: resource.audit.resourceType,
       resourceId: created.id,
@@ -359,7 +378,15 @@ export function handleApiRequest(request) {
   }
 }
 
-function routeApiRequest({ method, path, headers = {}, body = null, repository = defaultRepository }) {
+function routeApiRequest({
+  method,
+  path,
+  headers = {},
+  body = null,
+  repository = defaultRepository,
+  principal = null,
+  authConfig = { mode: "staged" }
+}) {
   if (!["GET", "POST"].includes(method)) {
     return json(405, {
       error: "method_not_allowed",
@@ -368,6 +395,7 @@ function routeApiRequest({ method, path, headers = {}, body = null, repository =
     });
   }
 
+  // /health is public — no principal required.
   if (path === "/health") {
     return json(200, {
       status: "ok",
@@ -382,15 +410,43 @@ function routeApiRequest({ method, path, headers = {}, body = null, repository =
   }
 
   const tenantId = parts[2];
-  if (!requireTenantAccess(headers, tenantId)) {
-    return forbidden();
+
+  // Resolve the identity. In OIDC mode the server pre-resolves and injects a
+  // verified principal; if it is absent, the request is unauthenticated. In
+  // staged mode we self-assert from headers (non-production).
+  const effectivePrincipal =
+    principal ?? (authConfig.mode === "oidc" ? null : resolveStagedPrincipal({ headers }));
+
+  if (!effectivePrincipal) {
+    return json(401, {
+      error: "unauthorized",
+      message: "Authentication required.",
+      staged: true
+    });
   }
 
   if (parts.length === 4) {
     const resource = collectionResourcesBySegment.get(parts[3]);
     if (resource) {
+      const action = method === "POST" ? "create" : "read";
+      const denied = authorize({
+        principal: effectivePrincipal,
+        tenantId,
+        resource: resource.audit.resourceType,
+        action
+      });
+      if (denied) {
+        return denied;
+      }
+
       if (method === "POST") {
-        return handleCollectionCreate({ resource, body, tenantId, headers, repository });
+        return handleCollectionCreate({
+          resource,
+          body,
+          tenantId,
+          actorId: effectivePrincipal.userId,
+          repository
+        });
       }
 
       return json(200, {
@@ -401,6 +457,16 @@ function routeApiRequest({ method, path, headers = {}, body = null, repository =
   }
 
   if (parts.length === 6 && parts[3] === "ai-findings" && parts[5] === "disposition") {
+    const denied = authorize({
+      principal: effectivePrincipal,
+      tenantId,
+      resource: "ai_finding",
+      action: "update"
+    });
+    if (denied) {
+      return denied;
+    }
+
     const findingId = parts[4];
     const finding = repository.getAiFindingById(findingId);
 
@@ -435,7 +501,7 @@ function routeApiRequest({ method, path, headers = {}, body = null, repository =
       appendTenantAuditEvent({
         repository,
         tenantId,
-        headers,
+        actorId: effectivePrincipal.userId,
         action: "api.ai_finding.disposition_updated",
         resourceType: "ai_finding",
         resourceId: updated.id,
@@ -453,6 +519,16 @@ function routeApiRequest({ method, path, headers = {}, body = null, repository =
   }
 
   if (parts.length === 5 && parts[3] === "dashboard" && parts[4] === "executive") {
+    const denied = authorize({
+      principal: effectivePrincipal,
+      tenantId,
+      resource: "executive_dashboard",
+      action: "read"
+    });
+    if (denied) {
+      return denied;
+    }
+
     return json(200, {
       item: buildExecutivePortfolioView({
         tenantId,
@@ -466,6 +542,11 @@ function routeApiRequest({ method, path, headers = {}, body = null, repository =
   }
 
   if (parts.length === 4 && parts[3] === "audit-events") {
+    const denied = authorize({ principal: effectivePrincipal, tenantId, resource: "audit_event", action: "read" });
+    if (denied) {
+      return denied;
+    }
+
     return json(200, {
       items: repository.listAuditEventsByTenant(tenantId),
       staged: true
@@ -473,6 +554,11 @@ function routeApiRequest({ method, path, headers = {}, body = null, repository =
   }
 
   if (parts.length === 5 && parts[3] === "audit-events" && parts[4] === "verify") {
+    const denied = authorize({ principal: effectivePrincipal, tenantId, resource: "audit_event", action: "read" });
+    if (denied) {
+      return denied;
+    }
+
     return json(200, {
       item: buildAuditVerificationReport(repository.listAuditEventsByTenant(tenantId)),
       staged: true
@@ -480,6 +566,11 @@ function routeApiRequest({ method, path, headers = {}, body = null, repository =
   }
 
   if (parts.length === 4 && parts[3] === "transfers") {
+    const denied = authorize({ principal: effectivePrincipal, tenantId, resource: "transfer", action: "read" });
+    if (denied) {
+      return denied;
+    }
+
     return json(200, {
       item: buildTransferQueue({
         transferPackages: syntheticTransferPackages.filter(

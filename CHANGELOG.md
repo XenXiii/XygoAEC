@@ -1,5 +1,23 @@
 # Changelog
 
+## Production-Readiness Slice A — Trust Layer + CI — 2026-07-12
+
+Phase 0 audit (`docs/audit/phase-0-production-readiness-audit.md`) then the approved Slice A:
+real authentication, RBAC enforcement, runtime staged-mode enforcement, and CI. Managed-OIDC
+verified via JWKS using `node:crypto` — **zero new dependencies**. Suite **170 → 185 passing**.
+
+- **Authentication:** OIDC/JWT verification (`apps/api/src/auth/{jwt,jwks,principal,config}.js`).
+  `XYGO_AUTH_MODE=oidc` derives tenant/user/role from a verified token; staged mode remains the
+  explicit non-production default. Self-asserted headers no longer grant access under OIDC.
+- **Authorization:** `packages/authorization` `canPerform` wired into every route; RBAC matrix
+  extended for API resources; cross-tenant / role-denied → 403.
+- **STAGED_MODE enforced at runtime:** `assertStagedMode` at startup + a boot-time safety gate
+  (refuses `STAGED_MODE=false` without OIDC; refuses OIDC without issuer/audience).
+- **CI/CD:** `.github/workflows/{ci,codeql,dependency-review}.yml` + `BRANCH_PROTECTION.md`.
+- **Tests:** `apps/api/test/auth.test.js` (+15) — JWT verify matrix, principal mapping, route RBAC.
+- **Carry-forward (not yet done):** rate limiting, body-size/timeout limits, security headers,
+  audit MAC, secret management, live IdP wiring. See the audit doc's "Slice A — EXECUTED" section.
+
 ## Full-Stack Review Hardening Pass — 2026-07-11
 
 Senior full-stack review of the staged Xygo AI AEC OS, with fixes applied in place.

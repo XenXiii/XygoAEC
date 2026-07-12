@@ -12,7 +12,7 @@ const ALLOW_MATRIX = [
   {
     resource: "project",
     action: "read",
-    organizationRoles: ["platform_admin", "company_admin", "executive", "supervisor"],
+    organizationRoles: ["platform_admin", "company_admin", "executive", "supervisor", "read_only_auditor"],
     projectRoles: ["project_executive", "project_manager", "design_manager", "viewer"]
   },
   {
@@ -31,6 +31,52 @@ const ALLOW_MATRIX = [
     resource: "announcement_channel",
     action: "publish",
     organizationRoles: ["platform_admin", "company_admin", "executive"]
+  },
+  // --- API resource rules (Phase 1 trust layer) ---
+  // Reads: broad in-tenant visibility for admin/exec/audit/supervisor roles, plus project roles.
+  // Writes: restricted to admin org roles or delivery project roles. All rules still enforce
+  // tenantId === resourceTenantId via canPerform's cross-tenant guard.
+  // "project"/"read" already has a dedicated rule above; do not duplicate it here.
+  ...[
+    "coordination_issue",
+    "rfi",
+    "permit_package",
+    "review_session",
+    "ai_review_run",
+    "ai_finding",
+    "executive_dashboard",
+    "audit_event",
+    "transfer"
+  ].map((resource) => ({
+    resource,
+    action: "read",
+    organizationRoles: [
+      "platform_admin",
+      "company_admin",
+      "executive",
+      "supervisor",
+      "read_only_auditor"
+    ],
+    projectRoles: ["project_executive", "project_manager", "design_manager", "viewer"]
+  })),
+  ...["coordination_issue", "rfi", "permit_package", "review_session", "ai_review_run", "ai_finding"].map(
+    (resource) => ({
+      resource,
+      action: "create",
+      organizationRoles: ["platform_admin", "company_admin"],
+      projectRoles: ["project_manager", "design_manager"]
+    })
+  ),
+  {
+    resource: "project",
+    action: "create",
+    organizationRoles: ["platform_admin", "company_admin"]
+  },
+  {
+    resource: "ai_finding",
+    action: "update",
+    organizationRoles: ["platform_admin", "company_admin"],
+    projectRoles: ["project_manager", "design_manager"]
   }
 ];
 
