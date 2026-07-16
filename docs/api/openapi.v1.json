@@ -76,6 +76,29 @@
         "name": "x-staged-user-id",
         "description": "Optional synthetic actor id recorded on audit events. Defaults to \"synthetic-user\" when omitted."
       }
+    },
+    "parameters": {
+      "PaginationLimit": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "description": "Max items per page (default 50, max 500). Applies to all list endpoints.",
+        "schema": { "type": "integer", "minimum": 1, "maximum": 500, "default": 50 }
+      },
+      "PaginationOffset": {
+        "name": "offset",
+        "in": "query",
+        "required": false,
+        "description": "Zero-based offset into the result set. Applies to all list endpoints.",
+        "schema": { "type": "integer", "minimum": 0, "default": 0 }
+      },
+      "StatusFilter": {
+        "name": "status",
+        "in": "query",
+        "required": false,
+        "description": "Filter list results by status / humanDisposition. Applies to all list endpoints.",
+        "schema": { "type": "string" }
+      }
     }
   },
   "security": [
@@ -110,11 +133,14 @@
             "schema": {
               "type": "string"
             }
-          }
+          },
+          { "$ref": "#/components/parameters/PaginationLimit" },
+          { "$ref": "#/components/parameters/PaginationOffset" },
+          { "$ref": "#/components/parameters/StatusFilter" }
         ],
         "responses": {
           "200": {
-            "description": "project list"
+            "description": "project list (paginated: items + pagination block)"
           },
           "403": {
             "description": "tenant mismatch",
@@ -145,6 +171,36 @@
         "responses": {
           "200": {
             "description": "executive summary"
+          }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/blueprint-workspace": {
+      "get": {
+        "summary": "Return the staged blueprint workspace (packages, sheets, review runs, findings)",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "staged blueprint workspace view"
+          },
+          "403": {
+            "description": "tenant mismatch or unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
           }
         }
       }

@@ -87,6 +87,34 @@ function splitPath(pathname) {
   return pathname.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
 }
 
+const DEFAULT_PAGE_LIMIT = 50;
+const MAX_PAGE_LIMIT = 500;
+
+// Offset pagination + optional status filter for list endpoints. Response gains a
+// `pagination` block additively; the default limit covers current dataset sizes so
+// existing clients see no change.
+function paginate(items, query) {
+  const status = query.get("status");
+  const filtered = status
+    ? items.filter((item) => item.status === status || item.humanDisposition === status)
+    : items;
+
+  const rawLimit = Number(query.get("limit"));
+  const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(Math.floor(rawLimit), MAX_PAGE_LIMIT) : DEFAULT_PAGE_LIMIT;
+  const rawOffset = Number(query.get("offset"));
+  const offset = Number.isFinite(rawOffset) && rawOffset > 0 ? Math.floor(rawOffset) : 0;
+
+  return {
+    items: filtered.slice(offset, offset + limit),
+    pagination: {
+      total: filtered.length,
+      limit,
+      offset,
+      nextOffset: offset + limit < filtered.length ? offset + limit : null
+    }
+  };
+}
+
 function uniqueById(items) {
   const seen = new Set();
   return items.filter((item) => {
@@ -436,8 +464,20 @@ const collectionResourcesBySegment = new Map(
   collectionResources.map((resource) => [resource.segment, resource])
 );
 
+function ensureObjectBody(parsed) {
+  if (parsed !== null && (typeof parsed !== "object" || Array.isArray(parsed))) {
+    return "Request body must be a JSON object.";
+  }
+  return null;
+}
+
 async function handleCollectionCreate({ resource, body, tenantId, actorId, repository, outbox }) {
   const parsed = parseBody(body);
+
+  const bodyShapeError = ensureObjectBody(parsed);
+  if (bodyShapeError) {
+    return badRequest(bodyShapeError);
+  }
 
   const validationError = resource.validate(parsed);
   if (validationError) {
@@ -516,15 +556,20 @@ async function routeApiRequest({
     });
   }
 
+  // Separate pathname from query so query params never leak into route matching.
+  const parsedUrl = new URL(path, "http://internal");
+  const pathname = parsedUrl.pathname;
+  const query = parsedUrl.searchParams;
+
   // /health is public — no principal required.
-  if (path === "/health") {
+  if (pathname === "/health") {
     return json(200, {
       status: "ok",
       staged: true
     });
   }
 
-  const parts = splitPath(path);
+  const parts = splitPath(pathname);
 
   if (parts[0] !== "v1" || parts[1] !== "tenants" || !parts[2]) {
     return notFound();
@@ -565,7 +610,7 @@ async function routeApiRequest({
           idempotency,
           clientKey: headers["idempotency-key"] ?? headers["Idempotency-Key"],
           tenantId,
-          path,
+          path: pathname,
           compute: () =>
             handleCollectionCreate({
               resource,
@@ -578,10 +623,8 @@ async function routeApiRequest({
         });
       }
 
-      return json(200, {
-        items: await resource.list(repository, tenantId),
-        staged: true
-      });
+      const { items, pagination } = paginate(await resource.list(repository, tenantId), query);
+      return json(200, { items, pagination, staged: true });
     }
   }
 
@@ -609,6 +652,10 @@ async function routeApiRequest({
     }
 
     const parsed = parseBody(body);
+    const bodyShapeError = ensureObjectBody(parsed);
+    if (bodyShapeError) {
+      return badRequest(bodyShapeError);
+    }
     if (!parsed?.nextDisposition) {
       return badRequest("nextDisposition is required.");
     }
@@ -717,10 +764,8 @@ async function routeApiRequest({
       return denied;
     }
 
-    return json(200, {
-      items: await repository.listAuditEventsByTenant(tenantId),
-      staged: true
-    });
+    const { items, pagination } = paginate(await repository.listAuditEventsByTenant(tenantId), query);
+    return json(200, { items, pagination, staged: true });
   }
 
   if (parts.length === 5 && parts[3] === "audit-events" && parts[4] === "verify") {

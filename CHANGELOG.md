@@ -1,5 +1,20 @@
 # Changelog
 
+## Production-Readiness Slice D — API Maturity — 2026-07-16
+
+Phase 6, dependency-free and test-backed. Suite **208 → 213** (1 gated-skip).
+
+- **Pagination + filtering:** `?limit`/`?offset` (default 50, max 500) + `?status` on all list
+  endpoints + `audit-events`; additive `pagination` block. Backward compatible.
+- **Router bug fix:** parse `pathname` separately from the query string (a `?param` on a REST URL
+  previously broke route matching at the server layer).
+- **Body validation:** non-object JSON bodies on POST → 400 before the domain layer.
+- **OpenAPI:** documented `blueprint-workspace`, added reusable pagination parameters.
+- **Contract test:** `openapi-contract.test.js` — documented paths must be implemented, and the
+  documented set must match the implemented surface (drift guard).
+- **Tests:** `openapi-contract.test.js` (+3), `pagination.test.js` (+2).
+- **Carry-forward:** response-schema validation, sorting, cursor pagination, richer error taxonomy.
+
 ## Production-Readiness Slice C — Reliability + Observability — 2026-07-12
 
 Phase 3 (reliability) + Phase 4 (observability basics), dependency-free and live-verified.

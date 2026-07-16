@@ -366,3 +366,34 @@ All dependency-free and test-backed; live-verified. Suite **194 → 203** (1 gat
 ### NOT done (carry forward)
 Distributed tracing (OTel SDK), dashboards, alerting, runbooks, SLOs; cross-process/crash-durable
 outbox (needs the Postgres table); secret management; multi-instance idempotency/rate-limit (Redis).
+
+---
+
+## Slice D — EXECUTED (2026-07-16): API maturity (Phase 6)
+
+Dependency-free, test-backed. Suite **208 → 213** (1 gated-skip). Also folded in the
+user-contributed `blueprint-workspace` route (verified it uses the same authorize()/async path).
+
+### Delivered
+- **Pagination + filtering (B10):** `?limit`/`?offset` (default 50, max 500) + `?status` filter on
+  every list endpoint + `audit-events`; additive `pagination` block (`total`/`limit`/`offset`/
+  `nextOffset`). Backward compatible.
+- **Query-routing bug fixed:** the router now parses `pathname` separately from the query string
+  (previously any `?param` on a REST URL broke route matching at the server layer).
+- **Stricter body validation:** non-object JSON bodies on POST are rejected with a clear 400
+  before the domain layer.
+- **OpenAPI completeness:** documented `blueprint-workspace`; added reusable pagination parameters;
+  spec still valid, security scheme intact.
+- **Contract test:** `openapi-contract.test.js` asserts every documented path is implemented
+  (non-404/405) and the documented path set matches the implemented surface (drift guard — this is
+  what flags an undocumented route like blueprint was).
+
+### Revised readiness (post-Slice D)
+| Dimension | Was (post-C) | Now |
+| --- | --- | --- |
+| API Maturity | 30% | **65%** | pagination/filter/validation + contract parity; response-schema validation & sorting still open |
+| Production | ~45% | **~48%** | consumable, contract-verified API surface |
+
+### NOT done (carry forward)
+Response-body schema validation, sorting, cursor pagination, per-field request schemas, richer
+error taxonomy. (Trust/data/ops carry-forwards from earlier slices still stand.)
