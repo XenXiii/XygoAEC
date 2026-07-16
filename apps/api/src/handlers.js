@@ -1,6 +1,11 @@
 import { buildExecutivePortfolioView, buildTransferQueue } from "../../../packages/dashboards/src/index.js";
 import { buildAuditVerificationReport, createAuditEvent, createOutboxEvent } from "../../../packages/audit/src/foundation.js";
-import { syntheticGovernanceEvents, syntheticTransferPackages } from "../../../packages/test-fixtures/src/synthetic-tenants.js";
+import {
+  syntheticDrawingSheets,
+  syntheticFileRecords,
+  syntheticGovernanceEvents,
+  syntheticTransferPackages
+} from "../../../packages/test-fixtures/src/synthetic-tenants.js";
 import { createRepositoryFromEnv } from "./repositories/index.js";
 import { canPerform } from "../../../packages/authorization/src/policy.js";
 import { resolveStagedPrincipal } from "./auth/principal.js";
@@ -80,6 +85,88 @@ function parseBody(body) {
 
 function splitPath(pathname) {
   return pathname.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
+}
+
+function uniqueById(items) {
+  const seen = new Set();
+  return items.filter((item) => {
+    if (!item?.id || seen.has(item.id)) {
+      return false;
+    }
+    seen.add(item.id);
+    return true;
+  });
+}
+
+function createBlueprintWorkspacePayload({ tenantId, projects, reviewSessions, aiReviewRuns, aiFindings, issues, permits }) {
+  const tenantSheetIds = new Set(
+    syntheticDrawingSheets.filter((sheet) => sheet.tenantId === tenantId).map((sheet) => sheet.id)
+  );
+
+  for (const reviewRun of aiReviewRuns) {
+    if (reviewRun.artifactType === "drawing_sheet" && reviewRun.artifactId) {
+      tenantSheetIds.add(reviewRun.artifactId);
+    }
+  }
+
+  for (const reviewSession of reviewSessions) {
+    for (const ref of reviewSession.artifactRefs ?? []) {
+      if (typeof ref === "string" && ref.startsWith("drawing:")) {
+        tenantSheetIds.add(ref.replace("drawing:", ""));
+      }
+    }
+  }
+
+  for (const permitPackage of permits) {
+    for (const ref of permitPackage.submissionPackageRefs ?? []) {
+      if (typeof ref === "string" && ref.startsWith("drawing:")) {
+        tenantSheetIds.add(ref.replace("drawing:", ""));
+      }
+    }
+  }
+
+  const sheets = uniqueById(
+    syntheticDrawingSheets.filter((sheet) => tenantSheetIds.has(sheet.id))
+  );
+
+  const fileIds = new Set(sheets.map((sheet) => sheet.fileId));
+  const files = uniqueById(syntheticFileRecords.filter((file) => fileIds.has(file.id)));
+
+  const packages = files.map((file) => {
+    const packageSheets = sheets.filter((sheet) => sheet.fileId === file.id);
+    const linkedReviewRuns = aiReviewRuns.filter((reviewRun) => packageSheets.some((sheet) => sheet.id === reviewRun.artifactId));
+    const linkedFindings = aiFindings.filter((finding) => linkedReviewRuns.some((reviewRun) => reviewRun.id === finding.reviewRunId));
+
+    return {
+      id: file.id,
+      tenantId,
+      projectId: packageSheets[0]?.projectId ?? projects[0]?.id ?? null,
+      name: file.originalFilename,
+      fileClass: file.fileClass,
+      sourceFormat: file.detectedType ?? file.mimeType ?? "pdf",
+      status: linkedFindings.some((finding) => finding.humanDisposition === "pending") ? "awaiting_review" : "staged_ready",
+      completeness: Math.max(72, 96 - linkedFindings.length * 4),
+      sheetCount: packageSheets.length,
+      reviewRunIds: linkedReviewRuns.map((reviewRun) => reviewRun.id),
+      staged: true
+    };
+  });
+
+  return {
+    tenantId,
+    projects,
+    packages,
+    sheets: sheets.map((sheet) => ({
+      ...sheet,
+      packageId: sheet.fileId
+    })),
+    reviewSessions,
+    reviewRuns: aiReviewRuns,
+    findings: aiFindings,
+    issues,
+    permits,
+    staged: true
+  };
 }
 
 // Authorization gate: the principal's tenant must match the path tenant, and the
@@ -585,6 +672,40 @@ async function routeApiRequest({
         issues: dashIssues,
         financeEvents: syntheticGovernanceEvents.filter((event) => event.tenantId === tenantId),
         permitPackages: dashPermits
+      }),
+      staged: true
+    });
+  }
+
+  if (parts.length === 4 && parts[3] === "blueprint-workspace") {
+    const denied = authorize({
+      principal: effectivePrincipal,
+      tenantId,
+      resource: "project",
+      action: "read"
+    });
+    if (denied) {
+      return denied;
+    }
+
+    const [projects, reviewSessions, aiReviewRuns, aiFindings, issues, permits] = await Promise.all([
+      repository.listProjectsByTenant(tenantId),
+      repository.listReviewSessionsByTenant(tenantId),
+      repository.listAiReviewRunsByTenant(tenantId),
+      repository.listAiFindingsByTenant(tenantId),
+      repository.listIssuesByTenant(tenantId),
+      repository.listPermitPackagesByTenant(tenantId)
+    ]);
+
+    return json(200, {
+      item: createBlueprintWorkspacePayload({
+        tenantId,
+        projects,
+        reviewSessions,
+        aiReviewRuns,
+        aiFindings,
+        issues,
+        permits
       }),
       staged: true
     });

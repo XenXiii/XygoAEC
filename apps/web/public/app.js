@@ -147,7 +147,19 @@ async function refresh() {
     setStatus(`Loaded staged tenant ${tenantId}.`);
     connectStream(apiBaseUrl, tenantId);
   } catch (error) {
-    setStatus(error.message, "error");
+    const isConnectionFailure =
+      /Failed to fetch|NetworkError|Load failed|fetch/i.test(error.message) ||
+      /ERR_CONNECTION_REFUSED|ERR_CONNECTION_RESET/i.test(error.message);
+
+    if (isConnectionFailure) {
+      setStatus(
+        `Workflow load failed because the staged API is not reachable at ${apiBaseUrl}. Start it with: node apps/api/src/server.js`,
+        "error"
+      );
+    } else {
+      setStatus(error.message, "error");
+    }
+
     liveIndicator.textContent = "Live updates disconnected";
     summaryGrid.innerHTML = "";
     boardGrid.innerHTML = "";
