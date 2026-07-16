@@ -8,6 +8,10 @@
     "packages/*"
   ],
   "scripts": {
+    "start": "node scripts/start-prototype.mjs",
+    "start:api": "node apps/api/src/server.js",
+    "start:web": "node apps/web/src/server.js",
+    "start:worker": "node apps/worker/src/worker.js",
     "test": "node --test packages/*/test/**/*.test.js apps/*/test/**/*.test.js",
     "test:staged-mode": "node --test packages/staged-mode/test/**/*.test.js",
     "test:foundation": "node --test packages/{shared-contracts,auth,authorization,audit}/test/**/*.test.js",
