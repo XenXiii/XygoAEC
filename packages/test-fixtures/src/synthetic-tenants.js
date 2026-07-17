@@ -137,6 +137,18 @@ export const syntheticFileRecords = [
     storageKey: "staged/commercial/model-a.ifc",
     sizeBytes: 4096,
     staged: true
+  },
+  {
+    id: "file-commercial-sheetset-a",
+    tenantId: "tenant-commercial-sim",
+    projectId: "project-commercial-b",
+    fileClass: "drawing_source",
+    originalFilename: "synthetic-commercial-sheetset-a.pdf",
+    mimeType: "application/pdf",
+    detectedType: "pdf",
+    storageKey: "staged/commercial/sheetset-a.pdf",
+    sizeBytes: 3072,
+    staged: true
   }
 ];
 
@@ -149,6 +161,28 @@ export const syntheticDrawingSheets = [
     discipline: "architecture",
     sheetNumber: "A101",
     sheetTitle: "First Floor Plan",
+    sourceFormat: "pdf",
+    staged: true
+  },
+  {
+    id: "sheet-commercial-a201",
+    tenantId: "tenant-commercial-sim",
+    projectId: "project-commercial-b",
+    fileId: "file-commercial-sheetset-a",
+    discipline: "architecture",
+    sheetNumber: "A201",
+    sheetTitle: "Level 2 Core & Shell Plan",
+    sourceFormat: "pdf",
+    staged: true
+  },
+  {
+    id: "sheet-commercial-s301",
+    tenantId: "tenant-commercial-sim",
+    projectId: "project-commercial-b",
+    fileId: "file-commercial-sheetset-a",
+    discipline: "structural",
+    sheetNumber: "S301",
+    sheetTitle: "Level 2 Framing Plan",
     sourceFormat: "pdf",
     staged: true
   }
@@ -173,7 +207,7 @@ export const syntheticReviewSessions = [
     tenantId: "tenant-commercial-sim",
     projectId: "project-commercial-b",
     createdBy: "user-commercial-admin",
-    artifactRefs: ["drawing:sheet-residential-a101", "model:model-commercial-a"],
+    artifactRefs: ["drawing:sheet-commercial-a201", "model:model-commercial-a"],
     staged: true
   }
 ];
@@ -260,7 +294,7 @@ export const syntheticAiReviewRuns = [
     tenantId: "tenant-commercial-sim",
     projectId: "project-commercial-b",
     artifactType: "drawing_sheet",
-    artifactId: "sheet-residential-a101",
+    artifactId: "sheet-commercial-a201",
     status: "queued",
     ruleVersion: "rules-v1",
     modelVersion: "model-sim-v1",

@@ -47,9 +47,7 @@ export function createWorker({
       timer = setInterval(() => {
         tick().catch((error) => logger.error("outbox.tick_failed", { error: String(error?.message ?? error) }));
       }, intervalMs);
-      if (typeof timer.unref === "function") {
-        timer.unref();
-      }
+      // Note: not unref'd — the standalone worker process must stay alive.
       logger.info("worker.started", { intervalMs });
       return this;
     },

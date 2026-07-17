@@ -153,12 +153,17 @@ function createBlueprintWorkspacePayload({ tenantId, projects, reviewSessions, a
     }
   }
 
+  // Tenant isolation: a referenced sheet id (from a review run / session / permit)
+  // is only included if the sheet ITSELF belongs to this tenant. Without this a
+  // cross-tenant artifact reference would leak another tenant's sheets/files.
   const sheets = uniqueById(
-    syntheticDrawingSheets.filter((sheet) => tenantSheetIds.has(sheet.id))
+    syntheticDrawingSheets.filter((sheet) => tenantSheetIds.has(sheet.id) && sheet.tenantId === tenantId)
   );
 
   const fileIds = new Set(sheets.map((sheet) => sheet.fileId));
-  const files = uniqueById(syntheticFileRecords.filter((file) => fileIds.has(file.id)));
+  const files = uniqueById(
+    syntheticFileRecords.filter((file) => fileIds.has(file.id) && file.tenantId === tenantId)
+  );
 
   const packages = files.map((file) => {
     const packageSheets = sheets.filter((sheet) => sheet.fileId === file.id);
