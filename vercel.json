@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "apps/web/public/**/*",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/",
+      "dest": "/apps/web/public/index.html"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/apps/web/public/$1"
+    }
+  ]
+}
