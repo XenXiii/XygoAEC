@@ -119,6 +119,15 @@ CREATE TABLE IF NOT EXISTS audit_events (
 -- Ordered per-tenant chain reads (replaces sqlite rowid ordering).
 CREATE INDEX IF NOT EXISTS idx_audit_tenant_seq ON audit_events(tenant_id, seq);
 
+CREATE TABLE IF NOT EXISTS platform_blueprints (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id),
+  industry TEXT,
+  payload JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_platform_blueprints_tenant ON platform_blueprints(tenant_id);
+
 -- Optional defense-in-depth beneath the app-layer RBAC (Slice A). Enable per
 -- deployment; the app sets `SET LOCAL xygo.tenant = $1` per request/transaction.
 -- ALTER TABLE projects ENABLE ROW LEVEL SECURITY;

@@ -3,6 +3,7 @@ import { createCoordinationIssue, createRfi } from "../../../../packages/coordin
 import { createFinding, createReviewRun, setHumanDisposition } from "../../../../packages/ai-review/src/index.js";
 import { createPermitPackage } from "../../../../packages/permits/src/index.js";
 import { createReviewSession } from "../../../../packages/projects/src/index.js";
+import { generatePlatformBlueprint } from "../../../../packages/platform-blueprint/src/index.js";
 import { createSeedState } from "./seed.js";
 
 function clone(value) {
@@ -31,6 +32,9 @@ export function createMemoryRepository() {
   );
   const aiFindingStore = new Map(
     seedState.aiFindings.map((finding) => [finding.id, clone(finding)])
+  );
+  const platformBlueprintStore = new Map(
+    seedState.platformBlueprints.map((blueprint) => [blueprint.id, clone(blueprint)])
   );
   const auditEventStore = seedState.auditEvents.map((event) => clone(event));
 
@@ -180,6 +184,22 @@ export function createMemoryRepository() {
 
       aiFindingStore.set(findingId, clone(updatedFinding));
       return clone(updatedFinding);
+    },
+    listPlatformBlueprintsByTenant(tenantId) {
+      return Array.from(platformBlueprintStore.values()).filter((blueprint) => blueprint.tenantId === tenantId);
+    },
+    getPlatformBlueprintById(blueprintId) {
+      return platformBlueprintStore.get(blueprintId) ?? null;
+    },
+    createPlatformBlueprint(input) {
+      const blueprint = generatePlatformBlueprint({ ...input, staged: true });
+
+      if (platformBlueprintStore.has(blueprint.id)) {
+        throw new Error("Platform blueprint id already exists.");
+      }
+
+      platformBlueprintStore.set(blueprint.id, clone(blueprint));
+      return clone(blueprint);
     },
     listAuditEventsByTenant(tenantId) {
       return auditEventStore.filter((event) => event.tenantId === tenantId).map((event) => clone(event));

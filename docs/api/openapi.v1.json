@@ -205,6 +205,45 @@
         }
       }
     },
+    "/v1/tenants/{tenantId}/platform-blueprints": {
+      "get": {
+        "summary": "List staged business platform blueprints for a tenant",
+        "parameters": [
+          { "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "$ref": "#/components/parameters/PaginationLimit" },
+          { "$ref": "#/components/parameters/PaginationOffset" },
+          { "$ref": "#/components/parameters/StatusFilter" }
+        ],
+        "responses": {
+          "200": { "description": "paginated blueprint list (items + pagination block)" },
+          "403": { "description": "tenant mismatch or unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } }
+        }
+      },
+      "post": {
+        "summary": "Create a staged business platform blueprint (deterministic generation, no live AI)",
+        "parameters": [
+          { "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "201": { "description": "generated blueprint" },
+          "400": { "description": "validation error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } },
+          "403": { "description": "tenant mismatch or unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/platform-blueprints/{blueprintId}": {
+      "get": {
+        "summary": "Read a single staged business platform blueprint",
+        "parameters": [
+          { "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "blueprintId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "blueprint" },
+          "404": { "description": "not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } }
+        }
+      }
+    },
     "/v1/tenants/{tenantId}/issues": {
       "get": {
         "summary": "List staged coordination issues for a tenant",

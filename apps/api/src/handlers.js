@@ -462,6 +462,38 @@ const collectionResources = [
       resourceType: "ai_finding",
       afterStateRef: (created) => created.humanDisposition
     }
+  },
+  {
+    segment: "platform-blueprints",
+    list: (repository, tenantId) => repository.listPlatformBlueprintsByTenant(tenantId),
+    validate: (parsed) =>
+      !parsed?.id || !parsed?.businessName || !parsed?.industry
+        ? "Platform blueprint id, businessName, and industry are required."
+        : null,
+    guard: ({ parsed, tenantId }) =>
+      parsed.tenantId && parsed.tenantId !== tenantId ? "Cross-tenant blueprint creation denied." : null,
+    build: (parsed, tenantId) => ({
+      id: parsed.id,
+      tenantId,
+      businessName: parsed.businessName,
+      industry: parsed.industry,
+      serviceLine: parsed.serviceLine ?? null,
+      roles: parsed.roles ?? [],
+      workflows: parsed.workflows ?? [],
+      painPoints: parsed.painPoints ?? [],
+      portalRequirements: parsed.portalRequirements ?? [],
+      dashboardRequirements: parsed.dashboardRequirements ?? [],
+      aiAgentRequirements: parsed.aiAgentRequirements ?? [],
+      documentReportingNeeds: parsed.documentReportingNeeds ?? [],
+      integrationNeeds: parsed.integrationNeeds ?? [],
+      selectedModules: parsed.selectedModules ?? []
+    }),
+    create: (repository, input) => repository.createPlatformBlueprint(input),
+    audit: {
+      action: "api.platform_blueprint.created",
+      resourceType: "platform_blueprint",
+      afterStateRef: (created) => created.industry
+    }
   }
 ];
 
@@ -631,6 +663,20 @@ async function routeApiRequest({
       const { items, pagination } = paginate(await resource.list(repository, tenantId), query);
       return json(200, { items, pagination, staged: true });
     }
+  }
+
+  if (method === "GET" && parts.length === 5 && parts[3] === "platform-blueprints") {
+    const denied = authorize({ principal: effectivePrincipal, tenantId, resource: "platform_blueprint", action: "read" });
+    if (denied) {
+      return denied;
+    }
+
+    const blueprint = await repository.getPlatformBlueprintById(parts[4]);
+    if (!blueprint || blueprint.tenantId !== tenantId) {
+      return notFound("Platform blueprint not found.");
+    }
+
+    return json(200, { item: blueprint, staged: true });
   }
 
   if (parts.length === 6 && parts[3] === "ai-findings" && parts[5] === "disposition") {

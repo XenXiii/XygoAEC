@@ -7,6 +7,7 @@ import { createCoordinationIssue, createRfi } from "../../../../packages/coordin
 import { createFinding, createReviewRun, setHumanDisposition } from "../../../../packages/ai-review/src/index.js";
 import { createPermitPackage } from "../../../../packages/permits/src/index.js";
 import { createReviewSession } from "../../../../packages/projects/src/index.js";
+import { generatePlatformBlueprint } from "../../../../packages/platform-blueprint/src/index.js";
 import { cloneState, createSeedState } from "./seed.js";
 
 const migrationPath = path.resolve(process.cwd(), "infrastructure/migrations/0001_staged_api.sql");
@@ -79,6 +80,10 @@ export function createSqliteRepository({ filePath }) {
   seedTable(database, "audit_events", seedState.auditEvents, {
     insert: (db) => db.prepare("INSERT INTO audit_events (event_id, tenant_id, payload) VALUES (?, ?, ?)"),
     values: (row) => [row.eventId, row.tenantId, JSON.stringify(row)]
+  });
+  seedTable(database, "platform_blueprints", seedState.platformBlueprints, {
+    insert: (db) => db.prepare("INSERT INTO platform_blueprints (id, tenant_id, payload) VALUES (?, ?, ?)"),
+    values: (row) => [row.id, row.tenantId, JSON.stringify(row)]
   });
 
   return {
@@ -279,6 +284,28 @@ export function createSqliteRepository({ filePath }) {
       );
 
       return cloneState(updatedFinding);
+    },
+    listPlatformBlueprintsByTenant(tenantId) {
+      return parseRows(database.prepare("SELECT payload FROM platform_blueprints WHERE tenant_id = ?").all(tenantId));
+    },
+    getPlatformBlueprintById(blueprintId) {
+      return parseRow(database.prepare("SELECT payload FROM platform_blueprints WHERE id = ?").get(blueprintId));
+    },
+    createPlatformBlueprint(input) {
+      const blueprint = generatePlatformBlueprint({ ...input, staged: true });
+
+      const exists = database.prepare("SELECT 1 FROM platform_blueprints WHERE id = ?").get(blueprint.id);
+      if (exists) {
+        throw new Error("Platform blueprint id already exists.");
+      }
+
+      database.prepare("INSERT INTO platform_blueprints (id, tenant_id, payload) VALUES (?, ?, ?)").run(
+        blueprint.id,
+        blueprint.tenantId,
+        JSON.stringify(blueprint)
+      );
+
+      return cloneState(blueprint);
     },
     listAuditEventsByTenant(tenantId) {
       return parseRows(database.prepare("SELECT payload FROM audit_events WHERE tenant_id = ? ORDER BY rowid ASC").all(tenantId));

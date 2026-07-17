@@ -10,13 +10,17 @@ const spec = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), "docs/api/op
 
 const TENANT = "tenant-commercial-sim";
 const FINDING = "finding-commercial-a";
+const BLUEPRINT = "blueprint-commercial-a";
 
 // The SSE stream is served by the server layer (server.js), not handleApiRequest,
 // so it is excluded from the request-level reachability check below.
 const SERVER_LAYER_PATHS = new Set(["/v1/tenants/{tenantId}/events/stream"]);
 
 function concrete(pathTemplate) {
-  return pathTemplate.replace("{tenantId}", TENANT).replace("{findingId}", FINDING);
+  return pathTemplate
+    .replace("{tenantId}", TENANT)
+    .replace("{findingId}", FINDING)
+    .replace("{blueprintId}", BLUEPRINT);
 }
 
 test("every documented path+method is implemented (not 404/405)", async () => {
@@ -48,6 +52,8 @@ test("documented path set matches the implemented surface (drift guard)", () => 
     "/v1/tenants/{tenantId}/projects",
     "/v1/tenants/{tenantId}/dashboard/executive",
     "/v1/tenants/{tenantId}/blueprint-workspace",
+    "/v1/tenants/{tenantId}/platform-blueprints",
+    "/v1/tenants/{tenantId}/platform-blueprints/{blueprintId}",
     "/v1/tenants/{tenantId}/issues",
     "/v1/tenants/{tenantId}/rfis",
     "/v1/tenants/{tenantId}/permits",

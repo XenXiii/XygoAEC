@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Xygo — Generated Platform Blueprint (staged)</title>
+    <meta name="color-scheme" content="dark" />
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 15px/1.55 system-ui, sans-serif; background: #0b0d12; color: #e7ebf3; }
+      a { color: #8fb4ff; }
+      .staged-banner { background: #3a2a00; color: #ffd479; text-align: center; padding: 8px; font-weight: 600; }
+      header, main { max-width: 980px; margin: 0 auto; padding: 20px; }
+      h1 { font-size: 1.5rem; margin: .2em 0; }
+      h2 { font-size: 1.05rem; margin: 20px 0 8px; }
+      .muted { color: #9aa4b8; }
+      form { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; margin: 16px 0; }
+      label { display: block; font-size: .8rem; color: #9aa4b8; margin-bottom: 4px; }
+      select, input, button { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid #2a2f3a; background: #12151c; color: inherit; }
+      button { background: #2f6bff; border-color: #2f6bff; cursor: pointer; font-weight: 600; }
+      button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid #8fb4ff; outline-offset: 2px; }
+      .card { border: 1px solid #222836; background: #10131a; border-radius: 12px; padding: 16px; margin: 12px 0; }
+      .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
+      .pill { display: inline-block; font-size: .72rem; padding: 2px 8px; border-radius: 999px; background: #1c2333; color: #8fb4ff; margin-left: 6px; }
+      ol { padding-left: 20px; margin: 0; }
+      li { margin: 5px 0; }
+      .replaces { color: #7fd8a6; font-size: .85rem; }
+      .rationale { color: #9aa4b8; font-size: .82rem; }
+      .state { color: #9aa4b8; padding: 12px 0; }
+      .error { color: #ff9b9b; }
+    </style>
+  </head>
+  <body>
+    <p class="staged-banner">STAGED / SIMULATED DATA — deterministic generation, no live AI, no deployment</p>
+    <header>
+      <a href="/">← Control Room</a> · <a href="/platform.html">Platform overview</a>
+      <h1>Generated Platform Blueprint</h1>
+      <p class="muted">
+        Live view of the blueprint the engine generates from a client's staged intake: recommended
+        modules, portal / dashboard / AI-agent specs, and the ordered next build steps.
+      </p>
+      <form id="controls">
+        <div>
+          <label for="tenant">Client (staged tenant)</label>
+          <select id="tenant">
+            <option value="tenant-commercial-sim">Commercial Simulation</option>
+            <option value="tenant-residential-sim">Residential Simulation</option>
+          </select>
+        </div>
+        <div>
+          <label for="api-base">API base URL</label>
+          <input id="api-base" type="url" value="http://127.0.0.1:3000" size="26" />
+        </div>
+        <button type="submit">Load blueprint</button>
+      </form>
+    </header>
+
+    <main id="main">
+      <div id="status" class="state" role="status" aria-live="polite">Loading…</div>
+      <section id="summary" aria-label="Blueprint summary"></section>
+      <section id="modules" aria-label="Recommended modules"></section>
+      <section id="steps" aria-label="Next build steps"></section>
+    </main>
+
+    <script type="module" src="/platform-blueprint.js"></script>
+  </body>
+</html>

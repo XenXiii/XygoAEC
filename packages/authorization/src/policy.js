@@ -46,7 +46,8 @@ const ALLOW_MATRIX = [
     "ai_finding",
     "executive_dashboard",
     "audit_event",
-    "transfer"
+    "transfer",
+    "platform_blueprint"
   ].map((resource) => ({
     resource,
     action: "read",
@@ -59,7 +60,7 @@ const ALLOW_MATRIX = [
     ],
     projectRoles: ["project_executive", "project_manager", "design_manager", "viewer"]
   })),
-  ...["coordination_issue", "rfi", "permit_package", "review_session", "ai_review_run", "ai_finding"].map(
+  ...["coordination_issue", "rfi", "permit_package", "review_session", "ai_review_run", "ai_finding", "platform_blueprint"].map(
     (resource) => ({
       resource,
       action: "create",

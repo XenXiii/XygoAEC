@@ -51,3 +51,9 @@ CREATE TABLE IF NOT EXISTS audit_events (
   tenant_id TEXT NOT NULL,
   payload TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS platform_blueprints (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  payload TEXT NOT NULL
+);

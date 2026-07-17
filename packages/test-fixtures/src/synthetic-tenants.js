@@ -1,3 +1,5 @@
+import { generatePlatformBlueprint } from "../../platform-blueprint/src/index.js";
+
 export const syntheticTenants = [
   {
     id: "tenant-residential-sim",
@@ -416,4 +418,23 @@ export const syntheticMessages = [
     deleted: false,
     staged: true
   }
+];
+
+export const syntheticPlatformBlueprints = [
+  generatePlatformBlueprint({
+    id: "blueprint-commercial-a",
+    tenantId: "tenant-commercial-sim",
+    businessName: "Northside Commercial Builders",
+    industry: "construction",
+    serviceLine: "Commercial general contracting",
+    roles: ["owner", "project manager", "field lead", "office admin"],
+    workflows: ["daily field reports", "permit package prep", "client status updates"],
+    painPoints: ["manual field report writing", "clients call for status", "spreadsheet job costing"],
+    portalRequirements: ["client status portal", "share approved reports"],
+    dashboardRequirements: ["job costing kpi", "open issues"],
+    aiAgentRequirements: ["AI project coordinator for status chasing"],
+    documentReportingNeeds: ["formatted PDF field reports", "permit submittal docs"],
+    integrationNeeds: ["QuickBooks", "Procore"],
+    staged: true
+  })
 ];

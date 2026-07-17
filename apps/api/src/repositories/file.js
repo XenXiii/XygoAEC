@@ -6,6 +6,7 @@ import { createCoordinationIssue, createRfi } from "../../../../packages/coordin
 import { createFinding, createReviewRun, setHumanDisposition } from "../../../../packages/ai-review/src/index.js";
 import { createPermitPackage } from "../../../../packages/permits/src/index.js";
 import { createReviewSession } from "../../../../packages/projects/src/index.js";
+import { generatePlatformBlueprint } from "../../../../packages/platform-blueprint/src/index.js";
 import { cloneState, createSeedState } from "./seed.js";
 
 function ensureDirectory(filePath) {
@@ -221,6 +222,27 @@ export function createFileRepository({ filePath }) {
       state.aiFindings = replaceById(state.aiFindings, updatedFinding);
       writeState(filePath, state);
       return cloneState(updatedFinding);
+    },
+    listPlatformBlueprintsByTenant(tenantId) {
+      return listByTenant(readState(filePath).platformBlueprints ?? [], tenantId);
+    },
+    getPlatformBlueprintById(blueprintId) {
+      return (readState(filePath).platformBlueprints ?? []).find((blueprint) => blueprint.id === blueprintId) ?? null;
+    },
+    createPlatformBlueprint(input) {
+      const state = readState(filePath);
+      const blueprint = generatePlatformBlueprint({ ...input, staged: true });
+
+      if (!Array.isArray(state.platformBlueprints)) {
+        state.platformBlueprints = [];
+      }
+      if (state.platformBlueprints.some((item) => item.id === blueprint.id)) {
+        throw new Error("Platform blueprint id already exists.");
+      }
+
+      state.platformBlueprints.push(blueprint);
+      writeState(filePath, state);
+      return cloneState(blueprint);
     },
     listAuditEventsByTenant(tenantId) {
       return readState(filePath).auditEvents.filter((event) => event.tenantId === tenantId);

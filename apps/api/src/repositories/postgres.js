@@ -3,6 +3,7 @@ import { createCoordinationIssue, createRfi } from "../../../../packages/coordin
 import { createFinding, createReviewRun, setHumanDisposition } from "../../../../packages/ai-review/src/index.js";
 import { createPermitPackage } from "../../../../packages/permits/src/index.js";
 import { createReviewSession } from "../../../../packages/projects/src/index.js";
+import { generatePlatformBlueprint } from "../../../../packages/platform-blueprint/src/index.js";
 import { createSeedState } from "./seed.js";
 import { syntheticTenants } from "../../../../packages/test-fixtures/src/synthetic-tenants.js";
 
@@ -102,6 +103,12 @@ export function createPostgresRepository({ connectionString }) {
       await p.query(
         "INSERT INTO ai_findings (id, tenant_id, review_run_id, category, severity, human_disposition, payload) VALUES ($1,$2,$3,$4,$5,$6,$7)",
         [row.id, run?.tenantId ?? "unknown", row.reviewRunId, row.category, row.severity ?? "medium", row.humanDisposition ?? "pending", row]
+      );
+    }
+    for (const row of state.platformBlueprints ?? []) {
+      await p.query(
+        "INSERT INTO platform_blueprints (id, tenant_id, industry, payload) VALUES ($1,$2,$3,$4)",
+        [row.id, row.tenantId, row.industry ?? null, row]
       );
     }
   }
@@ -232,6 +239,23 @@ export function createPostgresRepository({ connectionString }) {
         [updatedFinding.humanDisposition, updatedFinding.relatedIssueId ?? null, updatedFinding, findingId]
       );
       return updatedFinding;
+    },
+    async listPlatformBlueprintsByTenant(tenantId) {
+      return payloads(await query("SELECT payload FROM platform_blueprints WHERE tenant_id = $1", [tenantId]));
+    },
+    async getPlatformBlueprintById(blueprintId) {
+      return one(await query("SELECT payload FROM platform_blueprints WHERE id = $1", [blueprintId]));
+    },
+    async createPlatformBlueprint(input) {
+      const blueprint = generatePlatformBlueprint({ ...input, staged: true });
+      if (one(await query("SELECT payload FROM platform_blueprints WHERE id = $1", [blueprint.id]))) {
+        throw new Error("Platform blueprint id already exists.");
+      }
+      await query(
+        "INSERT INTO platform_blueprints (id, tenant_id, industry, payload) VALUES ($1,$2,$3,$4)",
+        [blueprint.id, blueprint.tenantId, blueprint.industry ?? null, blueprint]
+      );
+      return blueprint;
     },
     async listAuditEventsByTenant(tenantId) {
       return payloads(await query("SELECT payload FROM audit_events WHERE tenant_id = $1 ORDER BY seq ASC", [tenantId]));

@@ -1,5 +1,26 @@
 # Changelog
 
+## Xygo 2.0 — Business Platform Blueprint module — 2026-07-17
+
+First slice of the pivot to a generative business-platform builder. Staged/tenant-scoped,
+deterministic (no live AI), guardrails preserved. Suite **214 → 227** (1 gated-skip).
+
+- **Domain package `packages/platform-blueprint`:** module library (Client Portal, Scheduling,
+  CRM/Intake, Field Reporting, Document Analysis, Compliance, Permitting, Accounting/Job Costing,
+  AI Receptionist, AI Project Coordinator, Reporting Dashboard), intake contract, and a
+  deterministic `generatePlatformBlueprint` (keyword + industry-baseline recommendations, ordered
+  build steps, staged summary). Integrations recorded as `staged_mock_only`.
+- **API:** `GET/POST /v1/tenants/{t}/platform-blueprints` + `GET …/{blueprintId}`; audit event on
+  create; RBAC matrix extended (`platform_blueprint` read/create); documented in OpenAPI.
+- **Repositories:** create/list/get across memory/file/sqlite/postgres + seed + migrations.
+- **Fixtures:** one synthetic commercial blueprint (deterministically generated).
+- **Web:** live `/platform-blueprint.html` panel (summary, recommended modules, next build steps),
+  XSS-safe DOM rendering; linked from the Control Room.
+- **Tests:** package (+7) and API (+6): tenant isolation, validation, audit, staged safety, RBAC.
+- Also preserved the pre-pivot checkpoint fixes (blueprint tenant isolation, worker keep-alive,
+  fixture cross-tenant cleanup).
+
+
 ## Production-Readiness Slice D — API Maturity — 2026-07-16
 
 Phase 6, dependency-free and test-backed. Suite **208 → 213** (1 gated-skip).
