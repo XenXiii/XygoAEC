@@ -3,10 +3,16 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Contact Xygo</title>
-    <meta name="description" content="Contact Xygo to discuss a custom AI-powered operating system for your business.">
+    <title>Contact Xygo - Request a Business Systems Consultation</title>
+    <meta name="description" content="Contact Xygo to request a demo, business systems consultation, investor conversation, partnership discussion, or media inquiry.">
+    <link rel="canonical" href="https://xygo.pro/contact">
+    <meta property="og:title" content="Contact Xygo">
+    <meta property="og:description" content="Tell Xygo how your business operates and where disconnected systems create drag.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://xygo.pro/contact">
     <meta name="theme-color" content="#05070c">
     <meta name="color-scheme" content="dark">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/demo.css">
   </head>
   <body>
@@ -16,31 +22,40 @@
       <section class="page-hero">
         <div class="container reveal">
           <p class="eyebrow">Contact</p>
-          <h1>Tell Xygo how your business operates.</h1>
-          <p>Share the workflows, documents, teams, customers, bottlenecks, and tools that define your operation. Xygo will use that context to frame a systems assessment or demo.</p>
+          <h1>Tell Us How Your Business Operates.</h1>
+          <p>Describe your workflows, disconnected systems, and biggest operational bottlenecks. Xygo will evaluate where a custom operating system could create the greatest impact.</p>
         </div>
       </section>
       <section class="section-muted">
         <div class="container split">
-          <div class="form-panel reveal">
+          <form class="form-panel reveal" data-mailto-form data-subject="Xygo Contact Inquiry" novalidate>
+            <div class="honeypot"><label for="contact-website">Website</label><input id="contact-website" name="website" tabindex="-1" autocomplete="off"></div>
             <div class="form-grid">
-              <div class="field"><label for="name">Name</label><input id="name" name="name" autocomplete="name"></div>
-              <div class="field"><label for="company">Company</label><input id="company" name="company" autocomplete="organization"></div>
-              <div class="field"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="email"></div>
-              <div class="field"><label for="message">What should Xygo understand?</label><textarea id="message" name="message"></textarea></div>
-              <a class="btn btn-primary" href="mailto:hello@xygo.pro?subject=Xygo%20Operating%20System%20Inquiry">Send Inquiry</a>
+              <div class="field"><label for="contact-name">Full name</label><input id="contact-name" name="Full name" autocomplete="name" required><span class="field-error" data-error-for="contact-name"></span></div>
+              <div class="field"><label for="contact-company">Company</label><input id="contact-company" name="Company" autocomplete="organization" required><span class="field-error" data-error-for="contact-company"></span></div>
+              <div class="field"><label for="contact-email">Work email</label><input id="contact-email" name="Work email" type="email" autocomplete="email" required><span class="field-error" data-error-for="contact-email"></span></div>
+              <div class="field"><label for="contact-phone">Phone, optional</label><input id="contact-phone" name="Phone" autocomplete="tel"></div>
+              <div class="field"><label for="contact-industry">Industry</label><input id="contact-industry" name="Industry" required><span class="field-error" data-error-for="contact-industry"></span></div>
+              <div class="field"><label for="contact-type">Inquiry type</label><select id="contact-type" name="Inquiry type" required><option value="">Select one</option><option>Business System Consultation</option><option>Demo Request</option><option>Investor Inquiry</option><option>Strategic Partnership</option><option>Integration Partnership</option><option>Media Inquiry</option><option>General Inquiry</option></select><span class="field-error" data-error-for="contact-type"></span></div>
+              <div class="field"><label for="contact-size">Company size</label><input id="contact-size" name="Company size" required><span class="field-error" data-error-for="contact-size"></span></div>
+              <div class="field"><label for="contact-systems">Current systems</label><textarea id="contact-systems" name="Current systems" required></textarea><span class="field-error" data-error-for="contact-systems"></span></div>
+              <div class="field"><label for="contact-challenge">Main operational challenge</label><textarea id="contact-challenge" name="Main operational challenge" required></textarea><span class="field-error" data-error-for="contact-challenge"></span></div>
+              <div class="field"><label for="contact-message">Message</label><textarea id="contact-message" name="Message"></textarea></div>
+              <p class="field-error">Privacy notice: this static site opens an email draft. It does not store your message without a configured backend.</p>
+              <button class="btn btn-primary" type="submit">Prepare Inquiry Email</button>
+              <p class="form-status" data-form-status role="status">No inquiry has been prepared yet.</p>
             </div>
-          </div>
+          </form>
           <div class="grid-2 reveal">
-            <div class="card"><strong>For businesses</strong><p>Request a demo or operating-system assessment for your company.</p></div>
-            <div class="card"><strong>For investors</strong><p>Use the contact link and include your firm, role, and investment context.</p></div>
-            <div class="card"><strong>For partners</strong><p>Describe the service category, integration, or channel opportunity.</p></div>
-            <div class="card"><strong>Email</strong><p><a href="mailto:hello@xygo.pro">hello@xygo.pro</a></p></div>
+            <div class="card"><strong>Expected next step</strong><p>Xygo reviews the context, identifies the likely workflow areas, and frames a demo or systems assessment.</p></div>
+            <div class="card"><strong>Direct email</strong><p><a href="mailto:hello@xygo.pro">hello@xygo.pro</a></p></div>
+            <div class="card"><strong>FAQ</strong><p>Is this a live integration form? No. It uses an honest email fallback until a secure backend is configured.</p></div>
+            <div class="card"><strong>Partnerships</strong><p>Use Strategic Partnership or Integration Partnership so the inquiry type is included in the email draft.</p></div>
           </div>
         </div>
       </section>
     </main>
-    <footer class="footer"><div class="container footer-inner"><p class="footer-copy">Xygo generates and deploys custom AI-powered operating systems for SMBs.</p><div class="footer-links"><a href="/about">About</a><a href="/mission">Mission</a><a href="/investors">Investors</a><a href="/demo">Demo</a><a href="/contact">Contact</a></div></div></footer>
+    <footer class="footer"><div class="container footer-inner"><p class="footer-copy">Xygo creates custom AI-powered operating systems that help businesses unify workflows, tools, teams, documents, and operational intelligence.</p><div class="footer-links"><a href="/">Home</a><a href="/about">About</a><a href="/mission">Mission</a><a href="/contact">Contact</a><a href="/demo">Demo</a><a href="/#how">How Xygo Works</a><a href="/#modules">Module Library</a><a href="/investors">Investor Relations</a><a href="/investors#materials">Request Investor Materials</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/accessibility">Accessibility</a></div></div></footer>
     <script src="/demo.js" defer></script>
   </body>
 </html>

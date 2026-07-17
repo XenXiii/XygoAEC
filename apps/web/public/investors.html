@@ -5,8 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Xygo Investor Relations</title>
     <meta name="description" content="Investor overview for Xygo, a company generating and deploying custom AI-powered operating systems for SMBs.">
+    <link rel="canonical" href="https://xygo.pro/investors">
+    <meta property="og:title" content="Xygo Investor Relations">
+    <meta property="og:description" content="Xygo is building a generative operating-system platform for operationally complex SMBs.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://xygo.pro/investors">
     <meta name="theme-color" content="#05070c">
     <meta name="color-scheme" content="dark">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/demo.css">
   </head>
   <body>
@@ -42,11 +48,26 @@
           </ul>
         </div>
       </section>
-      <section class="section-muted">
-        <div class="container cta reveal"><div><p class="eyebrow">Investor Contact</p><h2>For investor conversations, use the contact page.</h2><p>Include your firm, role, and the context for the conversation.</p></div><a class="btn btn-primary" href="/contact">Contact Xygo</a></div>
+      <section class="section-muted" id="materials">
+        <div class="container split">
+          <div class="copy reveal"><p class="eyebrow">Investor Materials</p><h2>Request investor materials without public projection claims.</h2><p>Xygo is currently developing and validating its platform, operating model, initial vertical modules, and demonstration environments. This form opens an email draft until a secure investor pipeline is configured.</p></div>
+          <form class="form-panel reveal" data-mailto-form data-subject="Xygo Investor Materials Request" novalidate>
+            <div class="honeypot"><label for="investor-website">Website</label><input id="investor-website" name="website" tabindex="-1" autocomplete="off"></div>
+            <div class="form-grid">
+              <div class="field"><label for="investor-name">Name</label><input id="investor-name" name="Name" autocomplete="name" required><span class="field-error" data-error-for="investor-name"></span></div>
+              <div class="field"><label for="investor-firm">Firm</label><input id="investor-firm" name="Firm" autocomplete="organization" required><span class="field-error" data-error-for="investor-firm"></span></div>
+              <div class="field"><label for="investor-email">Email</label><input id="investor-email" name="Email" type="email" autocomplete="email" required><span class="field-error" data-error-for="investor-email"></span></div>
+              <div class="field"><label for="investor-type">Investor type</label><select id="investor-type" name="Investor type" required><option value="">Select one</option><option>Angel</option><option>Venture capital</option><option>Strategic investor</option><option>Family office</option><option>Other</option></select><span class="field-error" data-error-for="investor-type"></span></div>
+              <div class="field"><label for="investor-interest">Area of interest</label><input id="investor-interest" name="Area of interest" required><span class="field-error" data-error-for="investor-interest"></span></div>
+              <div class="field"><label for="investor-message">Message</label><textarea id="investor-message" name="Message"></textarea></div>
+              <button class="btn btn-primary" type="submit">Request Investor Materials</button>
+              <p class="form-status" data-form-status role="status">No investor request has been prepared yet.</p>
+            </div>
+          </form>
+        </div>
       </section>
     </main>
-    <footer class="footer"><div class="container footer-inner"><p class="footer-copy">Xygo generates and deploys custom AI-powered operating systems for SMBs.</p><div class="footer-links"><a href="/about">About</a><a href="/mission">Mission</a><a href="/investors">Investors</a><a href="/demo">Demo</a><a href="/contact">Contact</a></div></div></footer>
+    <footer class="footer"><div class="container footer-inner"><p class="footer-copy">Xygo creates custom AI-powered operating systems that help businesses unify workflows, tools, teams, documents, and operational intelligence.</p><div class="footer-links"><a href="/">Home</a><a href="/about">About</a><a href="/mission">Mission</a><a href="/contact">Contact</a><a href="/demo">Demo</a><a href="/#how">How Xygo Works</a><a href="/#modules">Module Library</a><a href="/investors">Investor Relations</a><a href="/investors#materials">Request Investor Materials</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/accessibility">Accessibility</a></div></div></footer>
     <script src="/demo.js" defer></script>
   </body>
 </html>

@@ -11,6 +11,8 @@ const mimeTypes = {
   ".css": "text/css; charset=utf-8",
   ".js": "application/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".txt": "text/plain; charset=utf-8",
+  ".xml": "application/xml; charset=utf-8",
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
@@ -46,8 +48,9 @@ export function createWebServer() {
     const filePath = resolveFile(url.pathname);
 
     if (!(filePath.startsWith(publicDir) || filePath.startsWith(srcDir)) || !fs.existsSync(filePath)) {
-      res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
-      res.end("Not found");
+      const notFoundPath = path.join(publicDir, "404.html");
+      res.writeHead(404, { "content-type": mimeTypes[".html"] });
+      res.end(fs.readFileSync(notFoundPath));
       return;
     }
 

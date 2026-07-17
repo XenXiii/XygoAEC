@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /control-room.html
+Disallow: /blueprint.html
+Disallow: /platform-blueprint.html
+Sitemap: https://xygo.pro/sitemap.xml

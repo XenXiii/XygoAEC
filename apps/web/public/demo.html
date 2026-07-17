@@ -3,73 +3,103 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Request a Xygo Demo</title>
-    <meta name="description" content="Request a demo of Xygo's custom AI-powered operating systems for businesses.">
+    <title>Xygo Demo - Custom Business Operating-System Demo</title>
+    <meta name="description" content="Explore a staged Xygo operating-system demonstration for construction, field services, inspections, engineering, and home services.">
+    <link rel="canonical" href="https://xygo.pro/demo">
+    <meta property="og:title" content="Xygo Demo">
+    <meta property="og:description" content="See how Xygo turns business workflows into custom AI operating systems.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://xygo.pro/demo">
     <meta name="theme-color" content="#05070c">
     <meta name="color-scheme" content="dark">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/demo.css">
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to content</a>
-    <header class="site-header">
-      <div class="nav-inner">
-        <a class="brand" href="/" aria-label="Xygo home">Xy<span>go</span></a>
-        <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="primary-navigation" aria-label="Open navigation"><span></span></button>
-        <nav aria-label="Primary">
-          <ul class="nav-links" id="primary-navigation">
-            <li><a href="/">Home</a></li>
-            <li><a href="/about">About</a></li>
-            <li><a href="/mission">Mission</a></li>
-            <li><a href="/investors">Investor Relations</a></li>
-            <li><a href="/demo">Demo</a></li>
-            <li><a href="/contact">Contact</a></li>
-          </ul>
-        </nav>
-        <div class="nav-actions">
-          <a class="btn btn-secondary" href="/investors">Investor Relations</a>
-          <a class="btn btn-primary" href="/demo">Request a Demo</a>
-        </div>
-      </div>
-    </header>
+    <header class="site-header"><div class="nav-inner"><a class="brand" href="/" aria-label="Xygo home">Xy<span>go</span></a><button class="menu-toggle" type="button" aria-expanded="false" aria-controls="primary-navigation" aria-label="Open navigation"><span></span></button><nav aria-label="Primary"><ul class="nav-links" id="primary-navigation"><li><a href="/">Home</a></li><li><a href="/about">About</a></li><li><a href="/mission">Mission</a></li><li><a href="/investors">Investor Relations</a></li><li><a href="/demo">Demo</a></li><li><a href="/contact">Contact</a></li></ul></nav><div class="nav-actions"><a class="btn btn-secondary" href="/investors">Investor Relations</a><a class="btn btn-primary" href="/demo">Request a Demo</a></div></div></header>
     <main id="main-content">
       <section class="page-hero">
         <div class="container reveal">
-          <p class="eyebrow">Demo</p>
-          <h1>See what Xygo would build for your business.</h1>
-          <p>A Xygo demo starts with your operation: how work comes in, who touches it, what documents matter, where customers need visibility, and which manual steps should become system workflows.</p>
+          <p class="eyebrow">Interactive Demonstration · Sample Data · Staged Workflow</p>
+          <h1>See How Xygo Turns a Business Workflow Into a Custom Operating System.</h1>
+          <p>Explore a staged operating-system demonstration using Synthetic Data, Sample Data, and Human Oversight in a Non-production environment. See how Xygo can connect customer intake, scheduling, documents, field activity, reporting, compliance, and AI coordination.</p>
         </div>
       </section>
       <section class="section-muted">
-        <div class="container split">
-          <div class="copy reveal">
-            <p class="eyebrow">What The Demo Covers</p>
-            <h2>From operating pain to system blueprint.</h2>
-            <p>The current preview uses Synthetic Data in a Non-production environment with Human Oversight. It is meant to show the pattern, not pretend the demo is already a live customer environment.</p>
+        <div class="container demo-shell reveal">
+          <div class="section-head">
+            <p class="eyebrow">Choose An Industry</p>
+            <h2>Change the scenario to see different workflows and modules.</h2>
           </div>
-          <div class="grid-2 reveal">
-            <div class="card"><strong>Workflow intake</strong><p>How leads, jobs, documents, approvals, reporting, and follow-ups move through the business.</p></div>
-            <div class="card"><strong>Module fit</strong><p>Which portals, dashboards, automations, integrations, and AI agents should be assembled first.</p></div>
-            <div class="card"><strong>Implementation path</strong><p>What a first deployment should include and what should wait for a later phase.</p></div>
-            <div class="card"><strong>Staged preview</strong><p>A controlled workspace that demonstrates dashboard, workflow, and reporting patterns.</p></div>
+          <div class="selector-row" aria-label="Industry demo selector">
+            <button type="button" data-scenario="construction" aria-pressed="true">Construction</button>
+            <button type="button" data-scenario="field" aria-pressed="false">Field Services</button>
+            <button type="button" data-scenario="inspections" aria-pressed="false">Inspections</button>
+            <button type="button" data-scenario="engineering" aria-pressed="false">Engineering</button>
+            <button type="button" data-scenario="home" aria-pressed="false">Home Services</button>
+          </div>
+          <div class="demo-panel">
+            <div class="tabs" role="tablist" aria-label="Demo views">
+              <button type="button" role="tab" data-tab="inputs" aria-selected="true">Business Inputs</button>
+              <button type="button" role="tab" data-tab="blueprint" aria-selected="false">Xygo Blueprint</button>
+              <button type="button" role="tab" data-tab="system" aria-selected="false">Generated System</button>
+              <button type="button" role="tab" data-tab="ai" aria-selected="false">AI Insights</button>
+            </div>
+            <h2 data-demo-title>Construction operating system</h2>
+            <div class="demo-output">
+              <div>
+                <div data-tab-panel="inputs"><h3>Current tools and requirements</h3><ul class="demo-list" data-demo-inputs></ul></div>
+                <div data-tab-panel="blueprint" hidden><h3>Blueprint map</h3><ul class="demo-list" data-demo-blueprint></ul></div>
+                <div data-tab-panel="system" hidden><h3>Generated operating system</h3><ul class="demo-list" data-demo-modules></ul></div>
+                <div data-tab-panel="ai" hidden><h3>Illustrative AI Output</h3><div class="empty-state">Sample AI coordinator: missing document risks, delayed approvals, and follow-up tasks would appear here after a real implementation connects approved data sources.</div></div>
+              </div>
+              <div class="demo-dashboard" aria-label="Sample operating dashboard">
+                <header><strong>Sample Dashboard View</strong><span class="status-pill">Staged</span></header>
+                <div class="dashboard-metrics">
+                  <div><strong data-demo-metric>18</strong><span data-demo-metric>Open jobs</span></div>
+                  <div><strong data-demo-metric>7</strong><span data-demo-metric>Permit checks</span></div>
+                  <div><strong data-demo-metric>4</strong><span data-demo-metric>AI follow-ups</span></div>
+                </div>
+                <div class="filter-row" aria-label="Module filter">
+                  <button type="button" data-filter="all" aria-pressed="true">All</button>
+                  <button type="button" data-filter="ops" aria-pressed="false">Ops</button>
+                  <button type="button" data-filter="client" aria-pressed="false">Client</button>
+                  <button type="button" data-filter="ai" aria-pressed="false">AI</button>
+                </div>
+                <ul class="demo-list">
+                  <li data-module-type="ops">Workflow status: estimate scheduled, field report pending</li>
+                  <li data-module-type="client">Client portal: approval waiting on uploaded report</li>
+                  <li data-module-type="ai">AI insight: follow up before permit deadline</li>
+                </ul>
+              </div>
+            </div>
           </div>
         </div>
       </section>
       <section>
-        <div class="container example-panel reveal">
-          <div class="copy">
-            <p class="eyebrow">Request</p>
-            <h2>Send the operating context.</h2>
-            <p>Include your industry, team size, core workflows, current tools, and the three processes that cause the most friction.</p>
-          </div>
-          <ul class="flow-list">
-            <li><a href="mailto:hello@xygo.pro?subject=Xygo%20Demo%20Request">Email demo request</a></li>
-            <li><a href="/contact">Use contact page</a></li>
-            <li><a href="/control-room.html">Open staged workspace</a></li>
-          </ul>
+        <div class="container split">
+          <div class="copy reveal"><p class="eyebrow">Request A Custom Demo</p><h2>Share enough context for Xygo to frame the right system.</h2><p>This form validates in the browser and opens an email draft. No backend submission is configured yet, so the site does not pretend to store or send requests silently.</p></div>
+          <form class="form-panel reveal" data-mailto-form data-subject="Xygo Custom Demo Request" novalidate>
+            <div class="honeypot"><label for="demo-website">Website</label><input id="demo-website" name="website" tabindex="-1" autocomplete="off"></div>
+            <div class="form-grid">
+              <div class="field"><label for="demo-name">Name</label><input id="demo-name" name="Name" autocomplete="name" required><span class="field-error" data-error-for="demo-name"></span></div>
+              <div class="field"><label for="demo-company">Company</label><input id="demo-company" name="Company" autocomplete="organization" required><span class="field-error" data-error-for="demo-company"></span></div>
+              <div class="field"><label for="demo-email">Work email</label><input id="demo-email" name="Work email" type="email" autocomplete="email" required><span class="field-error" data-error-for="demo-email"></span></div>
+              <div class="field"><label for="demo-industry">Industry</label><select id="demo-industry" name="Industry" required><option value="">Select one</option><option>Construction</option><option>Field Services</option><option>Inspections</option><option>Engineering</option><option>Home Services</option><option>Other</option></select><span class="field-error" data-error-for="demo-industry"></span></div>
+              <div class="field"><label for="demo-employees">Number of employees</label><input id="demo-employees" name="Number of employees" required><span class="field-error" data-error-for="demo-employees"></span></div>
+              <div class="field"><label for="demo-tools">Current tools</label><textarea id="demo-tools" name="Current tools" required></textarea><span class="field-error" data-error-for="demo-tools"></span></div>
+              <div class="field"><label for="demo-challenge">Primary operational challenge</label><textarea id="demo-challenge" name="Primary operational challenge" required></textarea><span class="field-error" data-error-for="demo-challenge"></span></div>
+              <div class="field"><label for="demo-capabilities">Desired system capabilities</label><textarea id="demo-capabilities" name="Desired system capabilities"></textarea><span class="field-error" data-error-for="demo-capabilities"></span></div>
+              <div class="field"><label for="demo-contact">Preferred contact method</label><select id="demo-contact" name="Preferred contact method" required><option value="">Select one</option><option>Email</option><option>Phone</option><option>Video call</option></select><span class="field-error" data-error-for="demo-contact"></span></div>
+              <button class="btn btn-primary" type="submit">Request a Custom Demo</button>
+              <p class="form-status" data-form-status role="status">No request has been prepared yet.</p>
+            </div>
+          </form>
         </div>
       </section>
     </main>
-    <footer class="footer"><div class="container footer-inner"><p class="footer-copy">Xygo generates and deploys custom AI-powered operating systems for SMBs.</p><div class="footer-links"><a href="/about">About</a><a href="/mission">Mission</a><a href="/investors">Investors</a><a href="/demo">Demo</a><a href="/contact">Contact</a></div></div></footer>
+    <footer class="footer"><div class="container footer-inner"><p class="footer-copy">Xygo creates custom AI-powered operating systems that help businesses unify workflows, tools, teams, documents, and operational intelligence.</p><div class="footer-links"><a href="/">Home</a><a href="/about">About</a><a href="/mission">Mission</a><a href="/contact">Contact</a><a href="/demo">Demo</a><a href="/#how">How Xygo Works</a><a href="/#modules">Module Library</a><a href="/investors">Investor Relations</a><a href="/investors#materials">Request Investor Materials</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/accessibility">Accessibility</a></div></div></footer>
     <script src="/demo.js" defer></script>
   </body>
 </html>

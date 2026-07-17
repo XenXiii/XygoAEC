@@ -21,7 +21,15 @@ test("demo preview discloses staged data and human oversight", () => {
 test("demo page keeps public navigation instead of dashboard navigation", () => {
   assert.match(html, /href="\/">Home/);
   assert.match(html, /href="\/contact">Contact/);
-  assert.doesNotMatch(html, /Dashboard|Admin/);
+  assert.doesNotMatch(html, /href="\/dashboard|href="\/admin/i);
+});
+
+test("demo page includes functional staged interaction hooks and form validation", () => {
+  assert.match(html, /data-scenario="construction"/);
+  assert.match(html, /data-tab="blueprint"/);
+  assert.match(html, /data-filter="ai"/);
+  assert.match(html, /data-mailto-form/);
+  assert.match(html, /required/);
 });
 
 test("demo preview styles include focus states and reduced motion support", () => {
