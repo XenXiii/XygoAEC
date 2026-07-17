@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Xygo Staged Platform Builder</title>
+    <meta name="theme-color" content="#04050A">
+    <meta name="color-scheme" content="dark">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+
+    <nav id="nav" aria-label="Primary">
+      <div class="nav-inner">
+        <a href="#home" class="nav-logo" aria-label="Xygo control room home">Xy<span>go</span></a>
+        <ul class="nav-links">
+          <li><a href="#summary-heading">Summary</a></li>
+          <li><a href="#activity-heading">Workflow</a></li>
+          <li><a href="/blueprint.html">Blueprinting</a></li>
+          <li><a href="/platform.html">Platform Page</a></li>
+          <li><a href="/platform-blueprint.html">Blueprint Plan</a></li>
+          <li><a href="/">Summary</a></li>
+        </ul>
+        <div class="nav-ctas">
+          <a class="btn btn-ghost" href="/">View Summary</a>
+          <a class="btn btn-primary" href="#controls">Refresh Workspace</a>
+        </div>
+      </div>
+    </nav>
+
+    <div class="banner" role="note">STAGED / SYNTHETIC DATA ONLY · NON-PRODUCTION CONTROL ROOM</div>
+
+    <header class="hero" id="home">
+      <div class="hero-bg" aria-hidden="true">
+        <div class="hero-grid"></div>
+        <div class="hero-vignette"></div>
+      </div>
+      <div class="shell-header">
+        <div class="hero-copy">
+          <p class="eyebrow">Xygo Business Platform Builder</p>
+          <h1>Staged Control Room</h1>
+          <p class="subtitle">
+            Tenant-scoped staged operations for the foundation behind Xygo's generative business
+            operating-system builder: workflows, files, dashboards, audits, AI review patterns, and
+            module-ready business infrastructure.
+          </p>
+          <div class="hero-pills" aria-label="Control room capabilities">
+            <span class="mini-pill">Blueprint Engine</span>
+            <span class="mini-pill">Module Library</span>
+            <span class="mini-pill">Client Portals</span>
+            <span class="mini-pill">AI Workflows</span>
+          </div>
+        </div>
+
+        <form class="controls" id="controls">
+          <div class="controls-head">
+            <div>
+              <p class="eyebrow">Workspace Access</p>
+              <h2>Connect staged tenant data</h2>
+            </div>
+            <p class="control-note">The workflow surface needs the staged API running on port 3000.</p>
+          </div>
+          <label>
+            Tenant
+            <select id="tenant-select" name="tenant">
+              <option value="tenant-commercial-sim">Commercial Simulation</option>
+              <option value="tenant-residential-sim">Residential Simulation</option>
+            </select>
+          </label>
+          <label>
+            API Base URL
+            <input id="api-base-url" name="apiBaseUrl" type="url" value="http://127.0.0.1:3000">
+          </label>
+          <button type="submit">Refresh staged workflow</button>
+          <p class="hint">If the boards do not load, start the API server with <code>node apps/api/src/server.js</code>.</p>
+        </form>
+      </div>
+    </header>
+
+    <main class="layout" id="main-content" tabindex="-1">
+      <section aria-labelledby="summary-heading" class="panel">
+        <div class="panel-header">
+          <div>
+              <p class="eyebrow">Executive Summary</p>
+              <h2 id="summary-heading">Platform Foundation Health</h2>
+          </div>
+          <p class="live-indicator" id="live-indicator" aria-live="polite">Live updates disconnected</p>
+        </div>
+        <div class="summary-grid" id="summary-grid" aria-live="polite"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="activity-heading">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Workflow</p>
+            <h2 id="activity-heading">Reusable Operating Boards</h2>
+          </div>
+        </div>
+        <div class="status-row" id="status-row" aria-live="polite"></div>
+        <div class="board-grid" id="board-grid"></div>
+      </section>
+    </main>
+
+    <template id="card-template">
+      <article class="metric-card">
+        <span class="metric-label"></span>
+        <strong class="metric-value"></strong>
+      </article>
+    </template>
+
+    <template id="board-template">
+      <section class="board">
+        <header class="board-header">
+          <h3></h3>
+          <span class="count-pill"></span>
+        </header>
+        <div class="board-body"></div>
+      </section>
+    </template>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
