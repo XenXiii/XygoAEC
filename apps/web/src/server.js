@@ -10,7 +10,12 @@ const mimeTypes = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".js": "application/javascript; charset=utf-8",
-  ".json": "application/json; charset=utf-8"
+  ".json": "application/json; charset=utf-8",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml"
 };
 
 function resolveFile(urlPath) {
@@ -22,7 +27,17 @@ function resolveFile(urlPath) {
     return path.join(srcDir, urlPath.replace(/^\/src\//, ""));
   }
 
-  return path.join(publicDir, urlPath.replace(/^\/+/, ""));
+  const publicPath = path.join(publicDir, urlPath.replace(/^\/+/, ""));
+
+  if (!path.extname(publicPath)) {
+    const htmlPath = `${publicPath}.html`;
+
+    if (fs.existsSync(htmlPath)) {
+      return htmlPath;
+    }
+  }
+
+  return publicPath;
 }
 
 export function createWebServer() {

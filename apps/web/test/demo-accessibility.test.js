@@ -18,6 +18,12 @@ test("demo preview discloses staged data and human oversight", () => {
   assert.match(html, /Non-production environment/);
 });
 
+test("demo page keeps public navigation instead of dashboard navigation", () => {
+  assert.match(html, /href="\/">Home/);
+  assert.match(html, /href="\/contact">Contact/);
+  assert.doesNotMatch(html, /Dashboard|Admin/);
+});
+
 test("demo preview styles include focus states and reduced motion support", () => {
   assert.match(css, /:focus-visible/);
   assert.match(css, /prefers-reduced-motion: reduce/);

@@ -2,5 +2,6 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "buildCommand": null,
-  "outputDirectory": "apps/web/public"
+  "outputDirectory": "apps/web/public",
+  "cleanUrls": true
 }
