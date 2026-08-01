@@ -244,6 +244,69 @@
         }
       }
     },
+    "/v1/tenants/{tenantId}/field-reports": {
+      "get": {
+        "summary": "List staged field reports for a tenant",
+        "parameters": [
+          { "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "$ref": "#/components/parameters/PaginationLimit" },
+          { "$ref": "#/components/parameters/PaginationOffset" },
+          { "$ref": "#/components/parameters/StatusFilter" }
+        ],
+        "responses": {
+          "200": { "description": "paginated field report list" },
+          "403": { "description": "tenant mismatch or unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } }
+        }
+      },
+      "post": {
+        "summary": "Capture a staged field report (photos/notes/checklist/voice placeholders)",
+        "parameters": [ { "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string" } } ],
+        "responses": {
+          "201": { "description": "captured field report" },
+          "400": { "description": "validation error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/field-reports/{reportId}": {
+      "get": {
+        "summary": "Read a single staged field report",
+        "parameters": [
+          { "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "reportId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "field report" },
+          "404": { "description": "not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/field-reports/{reportId}/draft": {
+      "post": {
+        "summary": "Generate a staged AI report draft (deterministic simulation, no live AI)",
+        "parameters": [
+          { "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "reportId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "report with generated draft" },
+          "404": { "description": "not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/field-reports/{reportId}/review": {
+      "post": {
+        "summary": "Set the human review status of a staged field report (approve gates client visibility)",
+        "parameters": [
+          { "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "reportId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "reviewed report" },
+          "400": { "description": "validation error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } },
+          "404": { "description": "not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } }
+        }
+      }
+    },
     "/v1/tenants/{tenantId}/issues": {
       "get": {
         "summary": "List staged coordination issues for a tenant",

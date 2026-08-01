@@ -4,6 +4,7 @@ import { createFinding, createReviewRun, setHumanDisposition } from "../../../..
 import { createPermitPackage } from "../../../../packages/permits/src/index.js";
 import { createReviewSession } from "../../../../packages/projects/src/index.js";
 import { generatePlatformBlueprint } from "../../../../packages/platform-blueprint/src/index.js";
+import { createFieldReport } from "../../../../packages/field-reporting/src/index.js";
 import { createSeedState } from "./seed.js";
 import { syntheticTenants } from "../../../../packages/test-fixtures/src/synthetic-tenants.js";
 
@@ -109,6 +110,12 @@ export function createPostgresRepository({ connectionString }) {
       await p.query(
         "INSERT INTO platform_blueprints (id, tenant_id, industry, payload) VALUES ($1,$2,$3,$4)",
         [row.id, row.tenantId, row.industry ?? null, row]
+      );
+    }
+    for (const row of state.fieldReports ?? []) {
+      await p.query(
+        "INSERT INTO field_reports (id, tenant_id, project_id, status, payload) VALUES ($1,$2,$3,$4,$5)",
+        [row.id, row.tenantId, row.projectId ?? null, row.status, row]
       );
     }
   }
@@ -256,6 +263,31 @@ export function createPostgresRepository({ connectionString }) {
         [blueprint.id, blueprint.tenantId, blueprint.industry ?? null, blueprint]
       );
       return blueprint;
+    },
+    async listFieldReportsByTenant(tenantId) {
+      return payloads(await query("SELECT payload FROM field_reports WHERE tenant_id = $1", [tenantId]));
+    },
+    async getFieldReportById(reportId) {
+      return one(await query("SELECT payload FROM field_reports WHERE id = $1", [reportId]));
+    },
+    async createFieldReport(input) {
+      const report = createFieldReport({ ...input, staged: true });
+      if (one(await query("SELECT payload FROM field_reports WHERE id = $1", [report.id]))) {
+        throw new Error("Field report id already exists.");
+      }
+      await query(
+        "INSERT INTO field_reports (id, tenant_id, project_id, status, payload) VALUES ($1,$2,$3,$4,$5)",
+        [report.id, report.tenantId, report.projectId ?? null, report.status, report]
+      );
+      return report;
+    },
+    async saveFieldReport(report) {
+      await query(
+        "INSERT INTO field_reports (id, tenant_id, project_id, status, payload) VALUES ($1,$2,$3,$4,$5) " +
+          "ON CONFLICT (id) DO UPDATE SET tenant_id = EXCLUDED.tenant_id, project_id = EXCLUDED.project_id, status = EXCLUDED.status, payload = EXCLUDED.payload",
+        [report.id, report.tenantId, report.projectId ?? null, report.status, report]
+      );
+      return report;
     },
     async listAuditEventsByTenant(tenantId) {
       return payloads(await query("SELECT payload FROM audit_events WHERE tenant_id = $1 ORDER BY seq ASC", [tenantId]));

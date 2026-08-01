@@ -47,7 +47,8 @@ const ALLOW_MATRIX = [
     "executive_dashboard",
     "audit_event",
     "transfer",
-    "platform_blueprint"
+    "platform_blueprint",
+    "field_report"
   ].map((resource) => ({
     resource,
     action: "read",
@@ -60,7 +61,7 @@ const ALLOW_MATRIX = [
     ],
     projectRoles: ["project_executive", "project_manager", "design_manager", "viewer"]
   })),
-  ...["coordination_issue", "rfi", "permit_package", "review_session", "ai_review_run", "ai_finding", "platform_blueprint"].map(
+  ...["coordination_issue", "rfi", "permit_package", "review_session", "ai_review_run", "ai_finding", "platform_blueprint", "field_report"].map(
     (resource) => ({
       resource,
       action: "create",
@@ -68,6 +69,12 @@ const ALLOW_MATRIX = [
       projectRoles: ["project_manager", "design_manager"]
     })
   ),
+  {
+    resource: "field_report",
+    action: "update",
+    organizationRoles: ["platform_admin", "company_admin"],
+    projectRoles: ["project_manager", "design_manager"]
+  },
   {
     resource: "project",
     action: "create",

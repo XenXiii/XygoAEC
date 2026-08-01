@@ -8,6 +8,7 @@ import { createFinding, createReviewRun, setHumanDisposition } from "../../../..
 import { createPermitPackage } from "../../../../packages/permits/src/index.js";
 import { createReviewSession } from "../../../../packages/projects/src/index.js";
 import { generatePlatformBlueprint } from "../../../../packages/platform-blueprint/src/index.js";
+import { createFieldReport } from "../../../../packages/field-reporting/src/index.js";
 import { cloneState, createSeedState } from "./seed.js";
 
 const migrationPath = path.resolve(process.cwd(), "infrastructure/migrations/0001_staged_api.sql");
@@ -83,6 +84,10 @@ export function createSqliteRepository({ filePath }) {
   });
   seedTable(database, "platform_blueprints", seedState.platformBlueprints, {
     insert: (db) => db.prepare("INSERT INTO platform_blueprints (id, tenant_id, payload) VALUES (?, ?, ?)"),
+    values: (row) => [row.id, row.tenantId, JSON.stringify(row)]
+  });
+  seedTable(database, "field_reports", seedState.fieldReports, {
+    insert: (db) => db.prepare("INSERT INTO field_reports (id, tenant_id, payload) VALUES (?, ?, ?)"),
     values: (row) => [row.id, row.tenantId, JSON.stringify(row)]
   });
 
@@ -306,6 +311,33 @@ export function createSqliteRepository({ filePath }) {
       );
 
       return cloneState(blueprint);
+    },
+    listFieldReportsByTenant(tenantId) {
+      return parseRows(database.prepare("SELECT payload FROM field_reports WHERE tenant_id = ?").all(tenantId));
+    },
+    getFieldReportById(reportId) {
+      return parseRow(database.prepare("SELECT payload FROM field_reports WHERE id = ?").get(reportId));
+    },
+    createFieldReport(input) {
+      const report = createFieldReport({ ...input, staged: true });
+      const exists = database.prepare("SELECT 1 FROM field_reports WHERE id = ?").get(report.id);
+      if (exists) {
+        throw new Error("Field report id already exists.");
+      }
+      database.prepare("INSERT INTO field_reports (id, tenant_id, payload) VALUES (?, ?, ?)").run(
+        report.id,
+        report.tenantId,
+        JSON.stringify(report)
+      );
+      return cloneState(report);
+    },
+    saveFieldReport(report) {
+      database.prepare("INSERT OR REPLACE INTO field_reports (id, tenant_id, payload) VALUES (?, ?, ?)").run(
+        report.id,
+        report.tenantId,
+        JSON.stringify(report)
+      );
+      return cloneState(report);
     },
     listAuditEventsByTenant(tenantId) {
       return parseRows(database.prepare("SELECT payload FROM audit_events WHERE tenant_id = ? ORDER BY rowid ASC").all(tenantId));

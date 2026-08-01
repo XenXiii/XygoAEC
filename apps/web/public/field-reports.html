@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Xygo — Generated Platform Blueprint (staged)</title>
+    <title>Xygo — Field Reporting (staged)</title>
     <meta name="color-scheme" content="dark" />
     <style>
       :root { color-scheme: dark; }
@@ -11,34 +11,38 @@
       body { margin: 0; font: 15px/1.55 system-ui, sans-serif; background: #0b0d12; color: #e7ebf3; }
       a { color: #8fb4ff; }
       .staged-banner { background: #3a2a00; color: #ffd479; text-align: center; padding: 8px; font-weight: 600; }
-      header, main { max-width: 980px; margin: 0 auto; padding: 20px; }
+      header, main { max-width: 1000px; margin: 0 auto; padding: 20px; }
       h1 { font-size: 1.5rem; margin: .2em 0; }
-      h2 { font-size: 1.05rem; margin: 20px 0 8px; }
+      h2 { font-size: 1.1rem; margin: 22px 0 8px; }
+      h3 { font-size: 1rem; margin: 0 0 4px; }
       .muted { color: #9aa4b8; }
       form { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; margin: 16px 0; }
       label { display: block; font-size: .8rem; color: #9aa4b8; margin-bottom: 4px; }
       select, input, button { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid #2a2f3a; background: #12151c; color: inherit; }
-      button { background: #2f6bff; border-color: #2f6bff; cursor: pointer; font-weight: 600; }
+      button { cursor: pointer; }
+      .btn-primary { background: #2f6bff; border-color: #2f6bff; font-weight: 600; }
+      .btn-approve { background: #1f7a4d; border-color: #1f7a4d; font-weight: 600; }
       button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid #8fb4ff; outline-offset: 2px; }
       .card { border: 1px solid #222836; background: #10131a; border-radius: 12px; padding: 16px; margin: 12px 0; }
-      .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
-      .pill { display: inline-block; font-size: .72rem; padding: 2px 8px; border-radius: 999px; background: #1c2333; color: #8fb4ff; margin-left: 6px; }
-      ol { padding-left: 20px; margin: 0; }
-      li { margin: 5px 0; }
-      .replaces { color: #7fd8a6; font-size: .85rem; }
-      .rationale { color: #9aa4b8; font-size: .82rem; }
+      .row { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center; }
+      .status { font-size: .72rem; padding: 2px 8px; border-radius: 999px; background: #1c2333; color: #8fb4ff; }
+      .status.approved { background: #123524; color: #7fd8a6; }
+      .status.changes_requested { background: #3a1f1f; color: #ff9b9b; }
+      .actions { display: flex; gap: 8px; }
+      .obs { color: #9aa4b8; font-size: .85rem; margin: 6px 0; }
+      .draft { border-left: 3px solid #2f6bff; padding-left: 12px; margin-top: 10px; }
       .state { color: #9aa4b8; padding: 12px 0; }
       .error { color: #ff9b9b; }
     </style>
   </head>
   <body>
-    <p class="staged-banner">STAGED / SIMULATED DATA — deterministic generation, no live AI, no deployment</p>
+    <p class="staged-banner">STAGED / SIMULATED DATA — AI draft is a deterministic simulation, not a live model</p>
     <header>
-      <a href="/">← Home</a> · <a href="/platform.html">Platform overview</a> · <a href="/field-reports.html">Field reporting</a>
-      <h1>Generated Platform Blueprint</h1>
+      <a href="/">← Home</a> · <a href="/platform-blueprint.html">Blueprint panel</a>
+      <h1>Field Reporting</h1>
       <p class="muted">
-        Live view of the blueprint the engine generates from a client's staged intake: recommended
-        modules, portal / dashboard / AI-agent specs, and the ordered next build steps.
+        Capture → deterministic AI draft → human review → client-visible on approval. The Client
+        Portal section shows only approved reports (the client-facing gate).
       </p>
       <form id="controls">
         <div>
@@ -52,17 +56,16 @@
           <label for="api-base">API base URL</label>
           <input id="api-base" type="url" value="http://127.0.0.1:3000" size="26" />
         </div>
-        <button type="submit">Load blueprint</button>
+        <button class="btn-primary" type="submit">Load reports</button>
       </form>
     </header>
 
     <main id="main">
       <div id="status" class="state" role="status" aria-live="polite">Loading…</div>
-      <section id="summary" aria-label="Blueprint summary"></section>
-      <section id="modules" aria-label="Recommended modules"></section>
-      <section id="steps" aria-label="Next build steps"></section>
+      <section id="operator" aria-label="Operator field reports"></section>
+      <section id="client" aria-label="Client portal (approved reports)"></section>
     </main>
 
-    <script type="module" src="/platform-blueprint.js"></script>
+    <script type="module" src="/field-reports.js"></script>
   </body>
 </html>

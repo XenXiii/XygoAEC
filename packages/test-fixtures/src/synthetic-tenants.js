@@ -1,4 +1,5 @@
 import { generatePlatformBlueprint } from "../../platform-blueprint/src/index.js";
+import { createFieldReport, generateReportDraft, setReviewStatus } from "../../field-reporting/src/index.js";
 
 export const syntheticTenants = [
   {
@@ -437,4 +438,50 @@ export const syntheticPlatformBlueprints = [
     integrationNeeds: ["QuickBooks", "Procore"],
     staged: true
   })
+];
+
+const commercialFieldReportDraft = generateReportDraft(
+  createFieldReport({
+    id: "field-report-commercial-a",
+    tenantId: "tenant-commercial-sim",
+    projectId: "project-commercial-b",
+    siteName: "Level 2 Core & Shell",
+    reportType: "daily_log",
+    author: "user-commercial-vdc",
+    capturedAt: "2026-07-16T15:00:00.000Z",
+    staged: true,
+    observations: [
+      { kind: "note", text: "Level 2 slab pour completed on gridlines A-C." },
+      { kind: "checklist", label: "Formwork inspected", checked: true },
+      { kind: "checklist", label: "Safety rails installed", checked: false },
+      { kind: "photo", caption: "East elevation progress", placeholderRef: "staged/commercial/field-photo-1" },
+      { kind: "voice", transcriptPlaceholder: "Concrete delivery delayed ~40 minutes." }
+    ]
+  })
+);
+
+export const syntheticFieldReports = [
+  // One drafted report awaiting review (client-invisible)...
+  commercialFieldReportDraft,
+  // ...and one approved report (client-visible) to demonstrate the client portal gate.
+  setReviewStatus(
+    generateReportDraft(
+      createFieldReport({
+        id: "field-report-commercial-b",
+        tenantId: "tenant-commercial-sim",
+        projectId: "project-commercial-b",
+        siteName: "South Stair Core",
+        reportType: "inspection",
+        author: "user-commercial-admin",
+        capturedAt: "2026-07-15T18:30:00.000Z",
+        staged: true,
+        observations: [
+          { kind: "note", text: "Fire-rated assembly inspection passed." },
+          { kind: "checklist", label: "Penetrations sealed", checked: true }
+        ]
+      })
+    ),
+    "approved",
+    { reviewedBy: "user-commercial-admin", reviewNote: "Approved for client release." }
+  )
 ];

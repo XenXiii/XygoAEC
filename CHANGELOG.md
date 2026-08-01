@@ -1,5 +1,26 @@
 # Changelog
 
+## Xygo 2.0 — Field Reporting package (proof package) — 2026-08-01
+
+Phase 3 of the pivot: the first proof package generated from a blueprint's `field_reporting`
+module. Staged/synthetic, deterministic AI-draft simulation (no live AI), guardrails preserved.
+Suite **243 → 249** (1 gated-skip).
+
+- **Domain package `packages/field-reporting`:** field-report intake with capture placeholders
+  (note / photo / checklist / voice — no real uploads), a deterministic `generateReportDraft`
+  simulation, `setReviewStatus` transitions (captured → draft_generated → in_review →
+  approved | changes_requested), and a `toClientView` client-facing projection.
+- **API:** `GET/POST /v1/tenants/{t}/field-reports`, `GET …/{reportId}`,
+  `POST …/{reportId}/draft`, `POST …/{reportId}/review`; audit events on create / draft / review;
+  RBAC (`field_report` read/create/update); documented in OpenAPI; contract-test drift list updated.
+- **Repositories:** create/list/getById/save across memory/file/sqlite/postgres + seed + migrations.
+- **Fixtures:** two synthetic commercial reports (one drafted/awaiting review, one approved).
+- **Web:** live `/field-reports.html` operator panel (capture → draft → approve buttons) plus a
+  Client Portal section that shows only approved reports (the client-visibility gate); XSS-safe DOM.
+- **Tests:** package (+7) and API (+6): full workflow, review-before-draft guard, validation,
+  tenant isolation, audit at each write, staged safety, RBAC.
+
+
 ## Xygo 2.0 — Business Platform Blueprint module — 2026-07-17
 
 First slice of the pivot to a generative business-platform builder. Staged/tenant-scoped,

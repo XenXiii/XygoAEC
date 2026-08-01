@@ -7,6 +7,7 @@ import { createFinding, createReviewRun, setHumanDisposition } from "../../../..
 import { createPermitPackage } from "../../../../packages/permits/src/index.js";
 import { createReviewSession } from "../../../../packages/projects/src/index.js";
 import { generatePlatformBlueprint } from "../../../../packages/platform-blueprint/src/index.js";
+import { createFieldReport } from "../../../../packages/field-reporting/src/index.js";
 import { cloneState, createSeedState } from "./seed.js";
 
 function ensureDirectory(filePath) {
@@ -243,6 +244,36 @@ export function createFileRepository({ filePath }) {
       state.platformBlueprints.push(blueprint);
       writeState(filePath, state);
       return cloneState(blueprint);
+    },
+    listFieldReportsByTenant(tenantId) {
+      return listByTenant(readState(filePath).fieldReports ?? [], tenantId);
+    },
+    getFieldReportById(reportId) {
+      return (readState(filePath).fieldReports ?? []).find((report) => report.id === reportId) ?? null;
+    },
+    createFieldReport(input) {
+      const state = readState(filePath);
+      const report = createFieldReport({ ...input, staged: true });
+      if (!Array.isArray(state.fieldReports)) {
+        state.fieldReports = [];
+      }
+      if (state.fieldReports.some((item) => item.id === report.id)) {
+        throw new Error("Field report id already exists.");
+      }
+      state.fieldReports.push(report);
+      writeState(filePath, state);
+      return cloneState(report);
+    },
+    saveFieldReport(report) {
+      const state = readState(filePath);
+      if (!Array.isArray(state.fieldReports)) {
+        state.fieldReports = [];
+      }
+      state.fieldReports = state.fieldReports.some((item) => item.id === report.id)
+        ? replaceById(state.fieldReports, report)
+        : [...state.fieldReports, report];
+      writeState(filePath, state);
+      return cloneState(report);
     },
     listAuditEventsByTenant(tenantId) {
       return readState(filePath).auditEvents.filter((event) => event.tenantId === tenantId);

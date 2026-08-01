@@ -128,6 +128,16 @@ CREATE TABLE IF NOT EXISTS platform_blueprints (
 );
 CREATE INDEX IF NOT EXISTS idx_platform_blueprints_tenant ON platform_blueprints(tenant_id);
 
+CREATE TABLE IF NOT EXISTS field_reports (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL REFERENCES tenants(id),
+  project_id TEXT,
+  status TEXT NOT NULL,
+  payload JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_field_reports_tenant ON field_reports(tenant_id);
+
 -- Optional defense-in-depth beneath the app-layer RBAC (Slice A). Enable per
 -- deployment; the app sets `SET LOCAL xygo.tenant = $1` per request/transaction.
 -- ALTER TABLE projects ENABLE ROW LEVEL SECURITY;

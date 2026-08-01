@@ -2,6 +2,7 @@ import {
   syntheticAiFindings,
   syntheticAiReviewRuns,
   syntheticCoordinationIssues,
+  syntheticFieldReports,
   syntheticPermitPackages,
   syntheticPlatformBlueprints,
   syntheticProjects,
@@ -27,6 +28,7 @@ export function createSeedState() {
     aiReviewRuns: clone(syntheticAiReviewRuns),
     aiFindings: clone(syntheticAiFindings),
     platformBlueprints: clone(syntheticPlatformBlueprints),
+    fieldReports: clone(syntheticFieldReports),
     auditEvents: []
   };
 }

@@ -4,6 +4,7 @@ import { createFinding, createReviewRun, setHumanDisposition } from "../../../..
 import { createPermitPackage } from "../../../../packages/permits/src/index.js";
 import { createReviewSession } from "../../../../packages/projects/src/index.js";
 import { generatePlatformBlueprint } from "../../../../packages/platform-blueprint/src/index.js";
+import { createFieldReport } from "../../../../packages/field-reporting/src/index.js";
 import { createSeedState } from "./seed.js";
 
 function clone(value) {
@@ -35,6 +36,9 @@ export function createMemoryRepository() {
   );
   const platformBlueprintStore = new Map(
     seedState.platformBlueprints.map((blueprint) => [blueprint.id, clone(blueprint)])
+  );
+  const fieldReportStore = new Map(
+    seedState.fieldReports.map((fieldReport) => [fieldReport.id, clone(fieldReport)])
   );
   const auditEventStore = seedState.auditEvents.map((event) => clone(event));
 
@@ -200,6 +204,24 @@ export function createMemoryRepository() {
 
       platformBlueprintStore.set(blueprint.id, clone(blueprint));
       return clone(blueprint);
+    },
+    listFieldReportsByTenant(tenantId) {
+      return Array.from(fieldReportStore.values()).filter((report) => report.tenantId === tenantId);
+    },
+    getFieldReportById(reportId) {
+      return fieldReportStore.get(reportId) ?? null;
+    },
+    createFieldReport(input) {
+      const report = createFieldReport({ ...input, staged: true });
+      if (fieldReportStore.has(report.id)) {
+        throw new Error("Field report id already exists.");
+      }
+      fieldReportStore.set(report.id, clone(report));
+      return clone(report);
+    },
+    saveFieldReport(report) {
+      fieldReportStore.set(report.id, clone(report));
+      return clone(report);
     },
     listAuditEventsByTenant(tenantId) {
       return auditEventStore.filter((event) => event.tenantId === tenantId).map((event) => clone(event));

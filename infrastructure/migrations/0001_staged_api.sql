@@ -57,3 +57,9 @@ CREATE TABLE IF NOT EXISTS platform_blueprints (
   tenant_id TEXT NOT NULL,
   payload TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS field_reports (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  payload TEXT NOT NULL
+);

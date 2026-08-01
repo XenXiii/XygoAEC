@@ -9,6 +9,7 @@ import {
 import { createRepositoryFromEnv } from "./repositories/index.js";
 import { canPerform } from "../../../packages/authorization/src/policy.js";
 import { resolveStagedPrincipal } from "./auth/principal.js";
+import { generateReportDraft, setReviewStatus } from "../../../packages/field-reporting/src/index.js";
 import { baseResponseHeaders } from "./http/headers.js";
 import { sharedOutbox } from "./reliability/outbox.js";
 import { createIdempotencyStore, idempotencyKeyFor } from "./reliability/idempotency.js";
@@ -494,6 +495,32 @@ const collectionResources = [
       resourceType: "platform_blueprint",
       afterStateRef: (created) => created.industry
     }
+  },
+  {
+    segment: "field-reports",
+    list: (repository, tenantId) => repository.listFieldReportsByTenant(tenantId),
+    validate: (parsed) =>
+      !parsed?.id || !parsed?.projectId || !parsed?.siteName || !parsed?.reportType || !parsed?.author
+        ? "Field report id, projectId, siteName, reportType, and author are required."
+        : null,
+    guard: ({ parsed, tenantId }) =>
+      parsed.tenantId && parsed.tenantId !== tenantId ? "Cross-tenant field report creation denied." : null,
+    build: (parsed, tenantId) => ({
+      id: parsed.id,
+      tenantId,
+      projectId: parsed.projectId,
+      siteName: parsed.siteName,
+      reportType: parsed.reportType,
+      author: parsed.author,
+      capturedAt: parsed.capturedAt ?? null,
+      observations: parsed.observations ?? []
+    }),
+    create: (repository, input) => repository.createFieldReport(input),
+    audit: {
+      action: "api.field_report.created",
+      resourceType: "field_report",
+      afterStateRef: (created) => created.status
+    }
   }
 ];
 
@@ -677,6 +704,92 @@ async function routeApiRequest({
     }
 
     return json(200, { item: blueprint, staged: true });
+  }
+
+  if (method === "GET" && parts.length === 5 && parts[3] === "field-reports") {
+    const denied = authorize({ principal: effectivePrincipal, tenantId, resource: "field_report", action: "read" });
+    if (denied) {
+      return denied;
+    }
+
+    const report = await repository.getFieldReportById(parts[4]);
+    if (!report || report.tenantId !== tenantId) {
+      return notFound("Field report not found.");
+    }
+
+    return json(200, { item: report, staged: true });
+  }
+
+  if (method === "POST" && parts.length === 6 && parts[3] === "field-reports" && parts[5] === "draft") {
+    const denied = authorize({ principal: effectivePrincipal, tenantId, resource: "field_report", action: "update" });
+    if (denied) {
+      return denied;
+    }
+
+    const report = await repository.getFieldReportById(parts[4]);
+    if (!report || report.tenantId !== tenantId) {
+      return notFound("Field report not found.");
+    }
+
+    try {
+      const drafted = await repository.saveFieldReport(generateReportDraft(report));
+      await appendTenantAuditEvent({
+        repository,
+        tenantId,
+        actorId: effectivePrincipal.userId,
+        action: "api.field_report.draft_generated",
+        resourceType: "field_report",
+        resourceId: drafted.id,
+        beforeStateRef: report.status,
+        afterStateRef: drafted.status
+      });
+      return json(200, { item: drafted, staged: true });
+    } catch (error) {
+      return badRequest(error.message);
+    }
+  }
+
+  if (method === "POST" && parts.length === 6 && parts[3] === "field-reports" && parts[5] === "review") {
+    const denied = authorize({ principal: effectivePrincipal, tenantId, resource: "field_report", action: "update" });
+    if (denied) {
+      return denied;
+    }
+
+    const report = await repository.getFieldReportById(parts[4]);
+    if (!report || report.tenantId !== tenantId) {
+      return notFound("Field report not found.");
+    }
+
+    const parsed = parseBody(body);
+    const bodyShapeError = ensureObjectBody(parsed);
+    if (bodyShapeError) {
+      return badRequest(bodyShapeError);
+    }
+    if (!parsed?.nextStatus) {
+      return badRequest("nextStatus is required.");
+    }
+
+    try {
+      const reviewed = await repository.saveFieldReport(
+        setReviewStatus(report, parsed.nextStatus, {
+          reviewedBy: parsed.reviewedBy ?? effectivePrincipal.userId,
+          reviewNote: parsed.reviewNote ?? null
+        })
+      );
+      await appendTenantAuditEvent({
+        repository,
+        tenantId,
+        actorId: effectivePrincipal.userId,
+        action: "api.field_report.reviewed",
+        resourceType: "field_report",
+        resourceId: reviewed.id,
+        beforeStateRef: report.status,
+        afterStateRef: reviewed.status
+      });
+      return json(200, { item: reviewed, staged: true });
+    } catch (error) {
+      return badRequest(error.message);
+    }
   }
 
   if (parts.length === 6 && parts[3] === "ai-findings" && parts[5] === "disposition") {
