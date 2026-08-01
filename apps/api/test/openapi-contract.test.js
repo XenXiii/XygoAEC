@@ -60,6 +60,7 @@ test("documented path set matches the implemented surface (drift guard)", () => 
     "/v1/tenants/{tenantId}/field-reports/{reportId}",
     "/v1/tenants/{tenantId}/field-reports/{reportId}/draft",
     "/v1/tenants/{tenantId}/field-reports/{reportId}/review",
+    "/v1/tenants/{tenantId}/client-portal",
     "/v1/tenants/{tenantId}/issues",
     "/v1/tenants/{tenantId}/rfis",
     "/v1/tenants/{tenantId}/permits",

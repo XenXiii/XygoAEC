@@ -485,3 +485,27 @@ export const syntheticFieldReports = [
     { reviewedBy: "user-commercial-admin", reviewNote: "Approved for client release." }
   )
 ];
+
+export const syntheticPortalUpdates = [
+  {
+    id: "update-commercial-1",
+    tenantId: "tenant-commercial-sim",
+    projectId: "project-commercial-b",
+    at: "2026-07-10T14:00:00.000Z",
+    message: "Project kicked off. Staged workspace provisioned."
+  },
+  {
+    id: "update-commercial-2",
+    tenantId: "tenant-commercial-sim",
+    projectId: "project-commercial-b",
+    at: "2026-07-16T16:00:00.000Z",
+    message: "Level 2 core & shell progress captured; report pending client release."
+  },
+  {
+    id: "update-residential-1",
+    tenantId: "tenant-residential-sim",
+    projectId: "project-residential-a",
+    at: "2026-07-12T09:00:00.000Z",
+    message: "Residential design review scheduled."
+  }
+];

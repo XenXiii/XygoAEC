@@ -307,6 +307,16 @@
         }
       }
     },
+    "/v1/tenants/{tenantId}/client-portal": {
+      "get": {
+        "summary": "Read the staged client-facing portal (approved reports, files, updates, staged payment placeholder)",
+        "parameters": [ { "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string" } } ],
+        "responses": {
+          "200": { "description": "per-project client portal views" },
+          "403": { "description": "tenant mismatch or unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } }
+        }
+      }
+    },
     "/v1/tenants/{tenantId}/issues": {
       "get": {
         "summary": "List staged coordination issues for a tenant",

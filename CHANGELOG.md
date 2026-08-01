@@ -1,5 +1,23 @@
 # Changelog
 
+## Xygo 2.0 — Client Portal package — 2026-08-01
+
+Phase 4 of the pivot: a read-only, client-facing portal composed from existing data. No new
+entity, no writes, no live billing. Staged guardrails preserved. Suite **249 → 258** (1 gated-skip).
+
+- **Domain package `packages/client-portal`:** deterministic `buildClientPortalView` composing
+  project status + approved field reports + files + updates + a non-actionable staged payment
+  placeholder (`paymentPlaceholder`).
+- **API:** `GET /v1/tenants/{t}/client-portal` returns one composed portal per project;
+  **only APPROVED field reports** reach the client (via `toClientView`); RBAC (`client_portal`
+  read); documented in OpenAPI; contract-test drift list updated. Read-only — no write route exists.
+- **Fixtures:** synthetic per-project portal updates.
+- **Web:** read-only `/client-portal.html` (project status, approved reports, files, updates,
+  staged payment note); XSS-safe DOM; cross-linked with the field-reporting panel.
+- **Tests:** package (+4) and API (+5): approved-only exposure, tenant isolation, payment
+  placeholder, read-only (writes not routed), staged, RBAC.
+
+
 ## Xygo 2.0 — Field Reporting package (proof package) — 2026-08-01
 
 Phase 3 of the pivot: the first proof package generated from a blueprint's `field_reporting`

@@ -48,7 +48,8 @@ const ALLOW_MATRIX = [
     "audit_event",
     "transfer",
     "platform_blueprint",
-    "field_report"
+    "field_report",
+    "client_portal"
   ].map((resource) => ({
     resource,
     action: "read",

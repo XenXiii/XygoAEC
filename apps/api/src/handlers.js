@@ -4,12 +4,14 @@ import {
   syntheticDrawingSheets,
   syntheticFileRecords,
   syntheticGovernanceEvents,
+  syntheticPortalUpdates,
   syntheticTransferPackages
 } from "../../../packages/test-fixtures/src/synthetic-tenants.js";
 import { createRepositoryFromEnv } from "./repositories/index.js";
 import { canPerform } from "../../../packages/authorization/src/policy.js";
 import { resolveStagedPrincipal } from "./auth/principal.js";
-import { generateReportDraft, setReviewStatus } from "../../../packages/field-reporting/src/index.js";
+import { generateReportDraft, setReviewStatus, toClientView } from "../../../packages/field-reporting/src/index.js";
+import { buildClientPortalView } from "../../../packages/client-portal/src/index.js";
 import { baseResponseHeaders } from "./http/headers.js";
 import { sharedOutbox } from "./reliability/outbox.js";
 import { createIdempotencyStore, idempotencyKeyFor } from "./reliability/idempotency.js";
@@ -959,6 +961,38 @@ async function routeApiRequest({
       }),
       staged: true
     });
+  }
+
+  // Read-only, client-facing portal: one composed view per project. Only APPROVED
+  // field reports reach the client (via toClientView); payment is a staged placeholder.
+  if (method === "GET" && parts.length === 4 && parts[3] === "client-portal") {
+    const denied = authorize({ principal: effectivePrincipal, tenantId, resource: "client_portal", action: "read" });
+    if (denied) {
+      return denied;
+    }
+
+    const [projects, reports] = await Promise.all([
+      repository.listProjectsByTenant(tenantId),
+      repository.listFieldReportsByTenant(tenantId)
+    ]);
+
+    const portals = projects.map((project) => {
+      const approvedReports = reports
+        .filter((report) => report.projectId === project.id)
+        .map((report) => toClientView(report))
+        .filter(Boolean);
+
+      return buildClientPortalView({
+        project,
+        approvedReports,
+        files: syntheticFileRecords.filter((file) => file.tenantId === tenantId && file.projectId === project.id),
+        updates: syntheticPortalUpdates.filter(
+          (update) => update.tenantId === tenantId && update.projectId === project.id
+        )
+      });
+    });
+
+    return json(200, { items: portals, staged: true });
   }
 
   return notFound();
