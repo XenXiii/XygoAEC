@@ -1,5 +1,25 @@
 # Changelog
 
+## Xygo 2.0 — Service packaging landing (Phase 5) — 2026-08-01
+
+Phase 5 of the pivot: a service-packaging landing surface for the Xygo offer. Static marketing
+page matching the existing site (demo.css / nav / footer). Suite **258 → 262**.
+
+- **`apps/web/public/services.html`:** the six packages (AI Platform Blueprint, AI Operations
+  Audit, AI Client Portal, AI Field Report System, AI Compliance Tracker, Contractor Operating
+  Dashboard), each framed by the business process it replaces (Strategic Rule).
+- **Honest staging:** packages with a working staged surface are tagged **Staged demo** and link to
+  it (`/platform-blueprint.html`, `/client-portal.html`, `/field-reports.html`,
+  `/control-room.html`); the rest are tagged **On the roadmap**. Page states it's
+  staged/simulated with no live integrations or payments.
+- **Nav:** added a Services link to the Home page nav + footer.
+- **Test:** `apps/web/test/services-page.test.js` (+4) asserting all six packages, the
+  process-replaced framing, staged-honest tags, live-surface links, and the home nav link.
+
+This completes the pivot's phased build: Blueprint (2) → Field Reporting (3) → Client Portal (4)
+→ Service packaging (5).
+
+
 ## Xygo 2.0 — Client Portal package — 2026-08-01
 
 Phase 4 of the pivot: a read-only, client-facing portal composed from existing data. No new
