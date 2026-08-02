@@ -120,10 +120,15 @@ Complete when:
 
 ### 7. Tenant Provisioning Flow
 
-Status: unfinished.
+Status: first staged provisioning slice completed; production persistence and identity-provider
+invites remain unfinished.
 
-Next action: add an internal admin script or command for creating a client tenant, users, roles,
-business profile, starter project, and branded portal configuration.
+Implemented: `npm run provision:tenant` creates a staged tenant, users, paid-client roles, business
+profile, starter project, deterministic blueprint, branded portal configuration, starter portal data,
+and provisioning event. Tests cover safe reruns, conflicting reruns, and second-tenant isolation.
+
+Next action: connect the same contract to managed Postgres and production identity-provider invites
+after the production activation gates are approved.
 
 Complete when:
 
@@ -160,9 +165,10 @@ Complete when:
 
 ### 10. First Paid Offer Spec
 
-Status: unfinished.
+Status: completed for the first staged activation slice.
 
-Next action: write the exact service offer for Contractor Field Reports + Client Portal.
+Implemented: `contractor-field-reports-offer.md` defines scope, pricing model, deliverables,
+exclusions, acceptance criteria, demo script, and change controls.
 
 Complete when:
 
@@ -298,9 +304,10 @@ copy.
 
 ## Exact Next 10 Tasks
 
-1. Write the first paid offer spec for Contractor Field Reports + Client Portal.
-2. Create the first-client onboarding checklist.
-3. Create a tenant provisioning script or admin command.
+1. ~~Write the first paid offer spec for Contractor Field Reports + Client Portal.~~ Completed.
+2. ~~Create the first-client onboarding checklist.~~ Completed.
+3. ~~Create a tenant provisioning script or admin command.~~ Completed for staged activation;
+   production persistence/invites remain gated.
 4. Configure Postgres staging and run the skipped Postgres test with `XYGO_TEST_PG_URL`.
 5. Add production/staging environment documentation for auth, database, secrets, web, API, and worker.
 6. Add a deployment plan with domain, HTTPS, health checks, rollback, and worker process.

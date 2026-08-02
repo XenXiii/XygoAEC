@@ -20,6 +20,10 @@ isolation, secret management, deployment controls, monitoring, and tests.
 
 ## First Execution Slice
 
+Status: completed in the paid-client activation first slice. The offer and onboarding checklist are
+documented, and `npm run provision:tenant` creates the staged tenant foundation with idempotency and
+tenant-isolation tests. Production activation remains blocked by the non-negotiable launch gates.
+
 Start with paid-client activation documentation and provisioning:
 
 1. Write the first paid offer spec for Contractor Field Reports + Client Portal.
