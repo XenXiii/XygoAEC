@@ -25,18 +25,45 @@ activation checklist and written approval.
 
 ## Pricing Model
 
-The commercial model is a one-time fixed activation fee plus a monthly managed-service fee, quoted
-on the signed order form. The activation fee covers the included scope. The monthly fee covers the
-configured tenant, routine support, and agreed usage allowance. Additional users, projects, storage,
-integrations, or custom workflows require a written change order. No price is implied by this repo.
+The commercial model is a one-time fixed activation fee plus a monthly managed-service fee. The
+signed order form is the only pricing authority and must state the exact amounts, currency, taxes,
+invoice timing, payment terms, monthly billing start date, initial term, renewal/cancellation terms,
+and included usage allowance. The activation fee covers only the deliverables in Included Scope. The
+monthly fee covers the configured tenant and Routine Support below. This repository is neither a
+quote nor an order form and does not establish a price or payment obligation.
+
+## Routine Support And Change Orders
+
+Routine Support means remote troubleshooting of the configured field-report and portal workflow,
+correction of reproducible defects in that configured scope, reasonable user-access administration,
+and answers to operator questions during the support hours and response targets stated in the signed
+order form. It does not include guaranteed uptime or a response time unless the order form expressly
+states one.
+
+A written change order, accepted before work begins, is required for another tenant; more than the
+included six users; additional projects, templates, storage, or usage; data migration; new reports,
+features, roles, integrations, or workflow changes; production activation work; on-site training; or
+after-hours/expedited support. The change order must state scope, fee, schedule, and acceptance
+criteria. Defect correction within the accepted configured scope is Routine Support, not a change
+order.
+
+## Approved Staging Sign-In Method
+
+Staging does not have real sign-in or verified user identity. For synthetic-data acceptance only, the
+approved method is to run with `XYGO_AUTH_MODE=staged` (the default) and send the provisioned tenant
+ID in the `x-staged-tenant-id` request header; `x-staged-user-id` may identify the synthetic operator.
+The browser demo supplies those headers. They are self-asserted, provide no credential or session,
+and must never be used with private client data or treated as production authentication. Paid
+production use requires `XYGO_AUTH_MODE=oidc` and completion of the authentication activation gate.
 
 ## Acceptance Criteria
 
-The client accepts the staged activation when an authorized client owner can sign in using the
-approved staging method; roles and tenant boundaries pass the test plan; a staff user can capture a
-sample report; an authorized reviewer can approve it; only that approved report appears in the
-correct branded portal; the client completes the demo script; and open production blockers are
-recorded and acknowledged.
+The client accepts the staged activation when a designated client owner can access the synthetic
+tenant using the Approved Staging Sign-In Method; roles and tenant boundaries pass the test plan; a
+staff operator can capture a sample report; a designated reviewer can approve it; only that approved
+report appears in the correct branded portal; the client completes the demo script; and open
+production blockers are recorded and acknowledged. Staging acceptance does not certify real
+authentication or authorize production use.
 
 ## Demo Script
 
@@ -46,10 +73,28 @@ recorded and acknowledged.
 4. Sign in as the client owner, review the draft, and approve it.
 5. Open the client portal and confirm the approved report appears.
 6. Switch to a second staged tenant and confirm the first tenant's project and report do not appear.
-7. Show the audit/provisioning record and the external-write kill switch.
+7. Show the audit/provisioning record and collect the External-Write Kill-Switch Evidence below.
+
+## External-Write Kill-Switch Evidence
+
+For this staged offer, the kill switch is the fail-closed code path, not an operator-controlled
+environment toggle. Evidence is all of the following:
+
+1. Run `node --test packages/staged-mode/test/policy.test.js` and retain the passing output for
+   `staged mode cannot be disabled`, `production targets are blocked`, `live credential patterns are
+   blocked`, and `outbound write methods are blocked in staged mode`.
+2. Run `node --test packages/integrations/test/index.test.js` and retain the passing output for
+   `provider adapters keep live writes disabled`.
+3. Record the reviewed commit hash for `packages/staged-mode/src/policy.js`, where
+   `assertStagedOutboundOperation` rejects outbound methods other than `GET` and `HEAD`, and for
+   `packages/integrations/src/index.js`, where `createFolder`, `uploadFile`, and `publishModel` throw
+   instead of calling providers.
+
+Any future code path capable of an external write requires a separately reviewed kill switch and
+test evidence; the evidence above must not be generalized to a new adapter or deployment.
 
 ## Change Control And Safety
 
 Client data must not be committed to the repository. Client-visible generated content always requires
 human approval. Live integrations and production activation require explicit written approval, a
-validated kill switch, and completion of `activation-checklist.md`.
+validated path-specific kill switch, and completion of `activation-checklist.md`.
