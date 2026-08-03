@@ -1,3 +1,8 @@
+const ORGANIZATION_ROLE_ALIASES = {
+  xygo_admin: "platform_admin",
+  client_owner: "company_admin"
+};
+
 const ALLOW_MATRIX = [
   {
     resource: "tenant",
@@ -12,7 +17,15 @@ const ALLOW_MATRIX = [
   {
     resource: "project",
     action: "read",
-    organizationRoles: ["platform_admin", "company_admin", "executive", "supervisor", "read_only_auditor"],
+    organizationRoles: [
+      "platform_admin",
+      "company_admin",
+      "executive",
+      "supervisor",
+      "read_only_auditor",
+      "client_staff",
+      "client_viewer"
+    ],
     projectRoles: ["project_executive", "project_manager", "design_manager", "viewer"]
   },
   {
@@ -58,7 +71,9 @@ const ALLOW_MATRIX = [
       "company_admin",
       "executive",
       "supervisor",
-      "read_only_auditor"
+      "read_only_auditor",
+      ...(resource === "field_report" ? ["client_staff"] : []),
+      ...(resource === "client_portal" ? ["client_staff", "client_viewer"] : [])
     ],
     projectRoles: ["project_executive", "project_manager", "design_manager", "viewer"]
   })),
@@ -66,14 +81,18 @@ const ALLOW_MATRIX = [
     (resource) => ({
       resource,
       action: "create",
-      organizationRoles: ["platform_admin", "company_admin"],
+      organizationRoles: [
+        "platform_admin",
+        "company_admin",
+        ...(resource === "field_report" ? ["client_staff"] : [])
+      ],
       projectRoles: ["project_manager", "design_manager"]
     })
   ),
   {
     resource: "field_report",
     action: "update",
-    organizationRoles: ["platform_admin", "company_admin"],
+    organizationRoles: ["platform_admin", "company_admin", "client_staff"],
     projectRoles: ["project_manager", "design_manager"]
   },
   {
@@ -115,8 +134,9 @@ export function canPerform(input) {
     };
   }
 
+  const organizationRole = ORGANIZATION_ROLE_ALIASES[input.organizationRole] ?? input.organizationRole;
   const organizationAllowed =
-    rule.organizationRoles?.includes(input.organizationRole) === true;
+    rule.organizationRoles?.includes(organizationRole) === true;
   const projectAllowed =
     input.projectRole && rule.projectRoles?.includes(input.projectRole) === true;
 

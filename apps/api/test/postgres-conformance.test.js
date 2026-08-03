@@ -1,6 +1,10 @@
+import crypto from "node:crypto";
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { createStaticJwks } from "../src/auth/jwks.js";
+import { resolveOidcPrincipal } from "../src/auth/principal.js";
+import { handleApiRequest } from "../src/handlers.js";
 import { createPostgresRepository } from "../src/repositories/postgres.js";
 
 // Gated: only runs when a Postgres URL is provided (CI postgres job). Verifies the
@@ -15,6 +19,44 @@ const skip = PG_URL ? false : "set XYGO_TEST_PG_URL to run the postgres conforma
 
 const TENANT_A = "tenant-commercial-sim";
 const TENANT_B = "tenant-residential-sim";
+const OIDC_ISSUER = "https://issuer.postgres.test/";
+const OIDC_AUDIENCE = "xygo-api";
+const OIDC_KID = "postgres-oidc-test-key";
+const OIDC_NOW_SEC = 1_800_000_000;
+const { publicKey: oidcPublicKey, privateKey: oidcPrivateKey } = crypto.generateKeyPairSync("rsa", {
+  modulusLength: 2048
+});
+const oidcJwk = {
+  ...oidcPublicKey.export({ format: "jwk" }),
+  kid: OIDC_KID,
+  use: "sig",
+  alg: "RS256"
+};
+
+function signOidcToken(subject) {
+  const header = Buffer.from(JSON.stringify({ alg: "RS256", kid: OIDC_KID, typ: "JWT" })).toString("base64url");
+  const claims = Buffer.from(JSON.stringify({
+    iss: OIDC_ISSUER,
+    aud: OIDC_AUDIENCE,
+    sub: subject,
+    exp: OIDC_NOW_SEC + 3600,
+    iat: OIDC_NOW_SEC - 10,
+    org_id: TENANT_B,
+    "https://xygo/org_role": "xygo_admin"
+  })).toString("base64url");
+  const input = `${header}.${claims}`;
+  const signature = crypto.sign("RSA-SHA256", Buffer.from(input), oidcPrivateKey).toString("base64url");
+  return `${input}.${signature}`;
+}
+
+const oidcConfig = {
+  mode: "oidc",
+  oidc: {
+    issuer: OIDC_ISSUER,
+    audience: OIDC_AUDIENCE,
+    clockToleranceSec: 60
+  }
+};
 
 test("postgres schema contains every canonical provisioning table", { skip }, async (t) => {
   const pg = (await import("pg")).default;
@@ -23,6 +65,7 @@ test("postgres schema contains every canonical provisioning table", { skip }, as
   const expectedTables = [
     "audit_events",
     "business_profiles",
+    "oidc_identities",
     "platform_blueprints",
     "portal_configurations",
     "portal_data",
@@ -40,7 +83,11 @@ test("postgres schema contains every canonical provisioning table", { skip }, as
   assert.deepEqual(result.rows.map((row) => row.table_name), expectedTables);
 
   const migrations = await pool.query("SELECT version FROM schema_migrations ORDER BY version");
-  assert.deepEqual(migrations.rows.map((row) => row.version), ["0001_init", "0002_paid_client_provisioning"]);
+  assert.deepEqual(migrations.rows.map((row) => row.version), [
+    "0001_init",
+    "0002_paid_client_provisioning",
+    "0003_oidc_authorization"
+  ]);
 });
 
 test("postgres backend satisfies the repository contract", { skip }, async (t) => {
@@ -155,6 +202,87 @@ test("postgres provisioning is canonical, idempotent, and conflict-safe", { skip
   );
 });
 
+test("verified OIDC identity resolves tenant and role from canonical Postgres records", { skip }, async (t) => {
+  const repo = createPostgresRepository({ connectionString: PG_URL });
+  t.after(() => repo.close());
+  const slug = `pg-oidc-auth-${process.pid}`;
+  const tenantId = `tenant-${slug}`;
+  const subject = `subject-${slug}`;
+  const input = {
+    ...provisioningInput(slug),
+    oidcIssuer: OIDC_ISSUER,
+    users: [{
+      email: `owner@${slug}.invalid`,
+      displayName: `${slug} Owner`,
+      role: "client_owner",
+      oidcSubject: subject
+    }]
+  };
+
+  await repo.provisionStagedTenant(input);
+  const identities = await repo.listOidcIdentitiesByTenant(tenantId);
+  assert.equal(identities.length, 1);
+  assert.equal(identities[0].subject, subject);
+
+  const principal = await resolveOidcPrincipal({
+    headers: { authorization: `Bearer ${signOidcToken(subject)}` },
+    jwks: createStaticJwks([oidcJwk]),
+    config: oidcConfig,
+    repository: repo,
+    now: OIDC_NOW_SEC * 1000
+  });
+
+  assert.equal(principal.userId, `${tenantId}-user-1`);
+  assert.equal(principal.tenantId, tenantId);
+  assert.equal(principal.organizationRole, "client_owner");
+  assert.equal(principal.staged, false);
+
+  const portal = await handleApiRequest({
+    method: "GET",
+    path: `/v1/tenants/${tenantId}/client-portal`,
+    repository: repo,
+    principal,
+    authConfig: oidcConfig
+  });
+  assert.equal(portal.status, 200);
+
+  const crossTenant = await handleApiRequest({
+    method: "GET",
+    path: `/v1/tenants/${TENANT_B}/client-portal`,
+    repository: repo,
+    principal,
+    authConfig: oidcConfig
+  });
+  assert.equal(crossTenant.status, 403);
+
+  await assert.rejects(
+    () => resolveOidcPrincipal({
+      headers: { authorization: `Bearer ${signOidcToken("unprovisioned-subject")}` },
+      jwks: createStaticJwks([oidcJwk]),
+      config: oidcConfig,
+      repository: repo,
+      now: OIDC_NOW_SEC * 1000
+    }),
+    (error) => error.code === "identity_not_provisioned"
+  );
+
+  const conflictingSlug = `${slug}-conflict`;
+  await assert.rejects(
+    () => repo.provisionStagedTenant({
+      ...provisioningInput(conflictingSlug),
+      oidcIssuer: OIDC_ISSUER,
+      users: [{
+        email: `owner@${conflictingSlug}.invalid`,
+        displayName: `${conflictingSlug} Owner`,
+        role: "client_owner",
+        oidcSubject: subject
+      }]
+    }),
+    (error) => error.code === "23505"
+  );
+  assert.equal(await repo.getTenantById(`tenant-${conflictingSlug}`), null);
+});
+
 test("postgres provisioning and portal branding/updates remain tenant-scoped", { skip }, async (t) => {
   const repo = createPostgresRepository({ connectionString: PG_URL });
   t.after(() => repo.close());
@@ -204,11 +332,21 @@ test("postgres provisioning rolls back every canonical record on failure", { ski
   t.after(() => failing.close());
 
   await assert.rejects(
-    () => failing.provisionStagedTenant(provisioningInput(slug)),
+    () => failing.provisionStagedTenant({
+      ...provisioningInput(slug),
+      oidcIssuer: OIDC_ISSUER,
+      users: [{
+        email: `owner@${slug}.invalid`,
+        displayName: `${slug} Owner`,
+        role: "client_owner",
+        oidcSubject: `subject-${slug}`
+      }]
+    }),
     /forced provisioning failure/
   );
   assert.equal(await failing.getTenantById(tenantId), null);
   assert.deepEqual(await failing.listUsersByTenant(tenantId), []);
+  assert.deepEqual(await failing.listOidcIdentitiesByTenant(tenantId), []);
   assert.deepEqual(await failing.listProjectsByTenant(tenantId), []);
   assert.deepEqual(await failing.listProvisioningEventsByTenant(tenantId), []);
   assert.deepEqual(await failing.listAuditEventsByTenant(tenantId), []);

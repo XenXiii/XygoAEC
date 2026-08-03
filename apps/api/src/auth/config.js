@@ -25,9 +25,6 @@ export function loadAuthConfig(env = process.env) {
       issuer,
       audience,
       jwksUri: env.XYGO_OIDC_JWKS_URI ?? (issuer ? `${issuer.replace(/\/$/, "")}/.well-known/jwks.json` : null),
-      tenantClaim: env.XYGO_OIDC_TENANT_CLAIM ?? "org_id",
-      rolesClaim: env.XYGO_OIDC_ROLES_CLAIM ?? "https://xygo/org_role",
-      projectRoleClaim: env.XYGO_OIDC_PROJECT_ROLE_CLAIM ?? "https://xygo/project_role",
       clockToleranceSec: Number(env.XYGO_OIDC_CLOCK_TOLERANCE_SEC ?? 60)
     };
   }
@@ -37,7 +34,7 @@ export function loadAuthConfig(env = process.env) {
 
 // Startup safety gate (B3): the runtime must not silently run in an inconsistent
 // trust posture. Called before the server starts accepting requests.
-export function assertAuthConfig(config) {
+export function assertAuthConfig(config, { repositoryMode = null } = {}) {
   if (config.mode === "oidc") {
     if (!config.oidc?.issuer || !config.oidc?.audience) {
       throw new AuthError(
@@ -47,6 +44,12 @@ export function assertAuthConfig(config) {
     }
     if (!config.oidc.jwksUri) {
       throw new AuthError("config_error", "OIDC mode requires a resolvable JWKS URI.");
+    }
+    if (repositoryMode !== "postgres") {
+      throw new AuthError(
+        "unsafe_config",
+        "XYGO_AUTH_MODE=oidc requires XYGO_API_REPOSITORY_MODE=postgres for canonical tenant and role resolution."
+      );
     }
     return;
   }

@@ -33,7 +33,11 @@ function normalizeUsers(users) {
     const displayName = requiredString(user?.displayName, `User ${index + 1} displayName`);
     const role = requiredString(user?.role, `User ${index + 1} role`);
     if (!PAID_ROLES.has(role)) throw new Error(`Unknown paid-client role: ${role}`);
-    return { email, displayName, role };
+    const normalizedUser = { email, displayName, role };
+    if (user?.oidcSubject !== undefined && user?.oidcSubject !== null) {
+      normalizedUser.oidcSubject = requiredString(user.oidcSubject, `User ${index + 1} oidcSubject`);
+    }
+    return normalizedUser;
   });
   if (!normalized.some((user) => user.role === "client_owner")) {
     throw new Error("At least one client_owner is required.");
@@ -41,19 +45,31 @@ function normalizeUsers(users) {
   if (new Set(normalized.map((user) => user.email)).size !== normalized.length) {
     throw new Error("User emails must be unique within a tenant.");
   }
+  const oidcSubjects = normalized.flatMap((user) => user.oidcSubject ? [user.oidcSubject] : []);
+  if (new Set(oidcSubjects).size !== oidcSubjects.length) {
+    throw new Error("OIDC subjects must be unique within a tenant.");
+  }
   return normalized.sort((a, b) => a.email.localeCompare(b.email));
 }
 
 export function normalizeProvisioningInput(input) {
   if (input?.staged !== true) throw new Error("Provisioning requires staged=true.");
-  return {
+  const users = normalizeUsers(input.users);
+  const config = {
     slug: assertSlug(input.slug),
     businessName: requiredString(input.businessName, "Business name"),
     projectName: requiredString(input.projectName, "Project name"),
     brandName: requiredString(input.brandName ?? input.businessName, "Brand name"),
     primaryColor: input.primaryColor ?? "#17324d",
-    users: normalizeUsers(input.users)
+    users
   };
+  if (input.oidcIssuer !== undefined && input.oidcIssuer !== null) {
+    config.oidcIssuer = requiredString(input.oidcIssuer, "OIDC issuer");
+  }
+  if (users.some((user) => user.oidcSubject) && !config.oidcIssuer) {
+    throw new Error("OIDC issuer is required when a user has an oidcSubject.");
+  }
+  return config;
 }
 
 export function buildStagedTenantProvisioning(input, { now = () => new Date().toISOString() } = {}) {
@@ -76,6 +92,18 @@ export function buildStagedTenantProvisioning(input, { now = () => new Date().to
     role: config.users[index].role,
     staged: true
   }));
+  const oidcIdentities = users.flatMap((user, index) => {
+    const subject = config.users[index].oidcSubject;
+    if (!subject) return [];
+    return [{
+      id: `${tenantId}-oidc-${index + 1}`,
+      tenantId,
+      userId: user.id,
+      issuer: config.oidcIssuer,
+      subject,
+      staged: true
+    }];
+  });
   const businessProfile = {
     id: `${tenantId}-business-profile`, tenantId, legalName: config.businessName,
     serviceLine: "Contractor Field Reports + Client Portal", staged: true
@@ -116,7 +144,7 @@ export function buildStagedTenantProvisioning(input, { now = () => new Date().to
   };
 
   return {
-    config, provisioningKey, tenant, users, roleAssignments, businessProfile,
+    config, provisioningKey, tenant, users, roleAssignments, oidcIdentities, businessProfile,
     project, blueprint, portalConfiguration, portalData, provisioningEvent
   };
 }

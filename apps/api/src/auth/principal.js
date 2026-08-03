@@ -38,8 +38,17 @@ function extractBearer(headers = {}, searchParams = null) {
   return null;
 }
 
-// OIDC mode: verify a managed-IdP JWT and map claims to a Principal.
-export async function resolveOidcPrincipal({ headers = {}, searchParams = null, jwks, config, now = Date.now() }) {
+// OIDC mode: verify a managed-IdP JWT, then resolve tenant and role from the
+// canonical repository. Token-provided tenant/role claims are never trusted for
+// authorization decisions.
+export async function resolveOidcPrincipal({
+  headers = {},
+  searchParams = null,
+  jwks,
+  config,
+  repository,
+  now = Date.now()
+}) {
   const token = extractBearer(headers, searchParams);
   if (!token) {
     throw new AuthError("missing_token", "Authorization bearer token is required.");
@@ -54,25 +63,48 @@ export async function resolveOidcPrincipal({ headers = {}, searchParams = null, 
     clockToleranceSec: config.oidc.clockToleranceSec
   });
 
-  const tenantId = claims[config.oidc.tenantClaim] ?? null;
-  if (!tenantId) {
-    throw new AuthError("missing_tenant_claim", `Token is missing the tenant claim (${config.oidc.tenantClaim}).`);
+  const subject = typeof claims.sub === "string" ? claims.sub.trim() : "";
+  if (!subject) {
+    throw new AuthError("missing_subject", "Token is missing the OIDC subject claim (sub).");
+  }
+
+  if (!repository?.resolveOidcAuthorization) {
+    throw new AuthError("config_error", "OIDC mode requires canonical PostgreSQL identity resolution.");
+  }
+
+  const authorization = await repository.resolveOidcAuthorization({
+    issuer: config.oidc.issuer,
+    subject
+  });
+
+  if (authorization?.status === "ambiguous") {
+    throw new AuthError("identity_ambiguous", "OIDC identity resolved to multiple authorization records.");
+  }
+  if (authorization?.status !== "active") {
+    throw new AuthError("identity_not_provisioned", "OIDC identity is not active in the canonical repository.");
   }
 
   return {
-    userId: claims.sub ?? null,
-    tenantId,
-    organizationRole: claims[config.oidc.rolesClaim] ?? null,
-    projectRole: claims[config.oidc.projectRoleClaim] ?? null,
+    userId: authorization.userId,
+    tenantId: authorization.tenantId,
+    organizationRole: authorization.organizationRole,
+    projectRole: authorization.projectRole ?? null,
     authenticated: true,
     staged: false
   };
 }
 
 // Unified entry used by the server. Returns a Principal or throws AuthError.
-export async function resolvePrincipal({ headers = {}, searchParams = null, config, jwks, now = Date.now() }) {
+export async function resolvePrincipal({
+  headers = {},
+  searchParams = null,
+  config,
+  jwks,
+  repository,
+  now = Date.now()
+}) {
   if (config.mode === "oidc") {
-    return resolveOidcPrincipal({ headers, searchParams, jwks, config, now });
+    return resolveOidcPrincipal({ headers, searchParams, jwks, config, repository, now });
   }
   return resolveStagedPrincipal({ headers, searchParams });
 }

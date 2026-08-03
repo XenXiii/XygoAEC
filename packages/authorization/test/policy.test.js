@@ -56,6 +56,26 @@ test("authorization denies disallowed visibility classes", () => {
   assert.equal(result.reason, "visibility_class_denied");
 });
 
+test("paid-client roles enforce owner, staff, and viewer permissions", () => {
+  const decision = (organizationRole, resource, action) => canPerform({
+    tenantId: "tenant-a",
+    resourceTenantId: "tenant-a",
+    organizationRole,
+    resource,
+    action
+  });
+
+  assert.equal(decision("xygo_admin", "field_report", "update").allowed, true);
+  assert.equal(decision("client_owner", "field_report", "update").allowed, true);
+  assert.equal(decision("client_staff", "field_report", "create").allowed, true);
+  assert.equal(decision("client_staff", "client_portal", "read").allowed, true);
+  assert.equal(decision("client_staff", "coordination_issue", "create").allowed, false);
+  assert.equal(decision("client_viewer", "project", "read").allowed, true);
+  assert.equal(decision("client_viewer", "client_portal", "read").allowed, true);
+  assert.equal(decision("client_viewer", "field_report", "read").allowed, false);
+  assert.equal(decision("client_viewer", "field_report", "update").allowed, false);
+});
+
 test("permission matrix is machine-readable", () => {
   const matrix = getPermissionMatrix();
   assert.ok(matrix.some((rule) => rule.resource === "announcement_channel"));

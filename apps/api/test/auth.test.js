@@ -3,6 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { AuthError, verifyJwt } from "../src/auth/jwt.js";
+import { assertAuthConfig, loadAuthConfig } from "../src/auth/config.js";
 import { createStaticJwks } from "../src/auth/jwks.js";
 import { resolveOidcPrincipal, resolveStagedPrincipal } from "../src/auth/principal.js";
 import { handleApiRequest } from "../src/handlers.js";
@@ -49,12 +50,26 @@ const oidcConfig = {
   oidc: {
     issuer: ISSUER,
     audience: AUDIENCE,
-    tenantClaim: "org_id",
-    rolesClaim: "https://xygo/org_role",
-    projectRoleClaim: "https://xygo/project_role",
     clockToleranceSec: 60
   }
 };
+
+function canonicalAuthorization(overrides = {}) {
+  return {
+    async resolveOidcAuthorization({ issuer, subject }) {
+      assert.equal(issuer, ISSUER);
+      assert.equal(subject, "user-123");
+      return {
+        status: "active",
+        userId: "canonical-user-7",
+        tenantId: "tenant-canonical",
+        organizationRole: "client_owner",
+        projectRole: null,
+        ...overrides
+      };
+    }
+  };
+}
 
 // --- verifyJwt ----------------------------------------------------------------
 
@@ -93,36 +108,70 @@ test("verifyJwt rejects a malformed token", () => {
 
 // --- principal resolution -----------------------------------------------------
 
-test("resolveOidcPrincipal maps verified claims to a principal", async () => {
+test("resolveOidcPrincipal derives tenant and role from the canonical repository", async () => {
   const jwks = createStaticJwks(KEYS);
   const principal = await resolveOidcPrincipal({
     headers: { authorization: `Bearer ${signJwt(baseClaims())}` },
     jwks,
     config: oidcConfig,
+    repository: canonicalAuthorization(),
     now
   });
   assert.equal(principal.authenticated, true);
   assert.equal(principal.staged, false);
-  assert.equal(principal.tenantId, "tenant-commercial-sim");
-  assert.equal(principal.userId, "user-123");
-  assert.equal(principal.organizationRole, "company_admin");
+  assert.equal(principal.tenantId, "tenant-canonical");
+  assert.equal(principal.userId, "canonical-user-7");
+  assert.equal(principal.organizationRole, "client_owner");
 });
 
-test("resolveOidcPrincipal rejects a token missing the tenant claim", async () => {
+test("resolveOidcPrincipal rejects a token missing the subject claim", async () => {
   const jwks = createStaticJwks(KEYS);
-  const token = signJwt(baseClaims({ org_id: undefined }));
+  const token = signJwt(baseClaims({ sub: undefined }));
   await assert.rejects(
-    () => resolveOidcPrincipal({ headers: { authorization: `Bearer ${token}` }, jwks, config: oidcConfig, now }),
-    (e) => e.code === "missing_tenant_claim"
+    () => resolveOidcPrincipal({
+      headers: { authorization: `Bearer ${token}` },
+      jwks,
+      config: oidcConfig,
+      repository: canonicalAuthorization(),
+      now
+    }),
+    (e) => e.code === "missing_subject"
+  );
+});
+
+test("resolveOidcPrincipal rejects identities without an active canonical assignment", async () => {
+  const jwks = createStaticJwks(KEYS);
+  await assert.rejects(
+    () => resolveOidcPrincipal({
+      headers: { authorization: `Bearer ${signJwt(baseClaims())}` },
+      jwks,
+      config: oidcConfig,
+      repository: canonicalAuthorization({ status: "not_found" }),
+      now
+    }),
+    (e) => e.code === "identity_not_provisioned"
   );
 });
 
 test("resolveOidcPrincipal requires a bearer token", async () => {
   const jwks = createStaticJwks(KEYS);
   await assert.rejects(
-    () => resolveOidcPrincipal({ headers: {}, jwks, config: oidcConfig, now }),
+    () => resolveOidcPrincipal({ headers: {}, jwks, config: oidcConfig, repository: canonicalAuthorization(), now }),
     (e) => e.code === "missing_token"
   );
+});
+
+test("OIDC startup requires the canonical Postgres repository", () => {
+  const config = loadAuthConfig({
+    XYGO_AUTH_MODE: "oidc",
+    XYGO_OIDC_ISSUER: ISSUER,
+    XYGO_OIDC_AUDIENCE: AUDIENCE
+  });
+  assert.throws(
+    () => assertAuthConfig(config, { repositoryMode: "sqlite" }),
+    (error) => error instanceof AuthError && error.code === "unsafe_config"
+  );
+  assert.doesNotThrow(() => assertAuthConfig(config, { repositoryMode: "postgres" }));
 });
 
 test("resolveStagedPrincipal self-asserts tenant and defaults the role", () => {
@@ -173,6 +222,71 @@ test("RBAC: company_admin can create in-tenant", async () => {
     body: { id: "i1", projectId: "project-commercial-b", title: "t", description: "d" }
   });
   assert.equal(create.status, 201);
+});
+
+test("paid-client staff can capture reports while viewers remain read-only", async () => {
+  const staff = {
+    userId: "staff-1",
+    tenantId: T,
+    organizationRole: "client_staff",
+    projectRole: null,
+    authenticated: true,
+    staged: false
+  };
+  const viewer = { ...staff, userId: "viewer-1", organizationRole: "client_viewer" };
+  const body = {
+    id: "fr-paid-auth",
+    projectId: "project-commercial-b",
+    siteName: "Paid auth test",
+    reportType: "daily_log",
+    author: staff.userId,
+    observations: [{ kind: "note", text: "Verified staff capture" }]
+  };
+
+  const staffCreate = await request({
+    method: "POST",
+    path: `/v1/tenants/${T}/field-reports`,
+    principal: staff,
+    body
+  });
+  assert.equal(staffCreate.status, 201);
+
+  const viewerCreate = await request({
+    method: "POST",
+    path: `/v1/tenants/${T}/field-reports`,
+    principal: viewer,
+    body: { ...body, id: "fr-paid-viewer" }
+  });
+  assert.equal(viewerCreate.status, 403);
+
+  const viewerPortal = await request({
+    method: "GET",
+    path: `/v1/tenants/${T}/client-portal`,
+    principal: viewer
+  });
+  assert.equal(viewerPortal.status, 200);
+
+  const viewerReports = await request({
+    method: "GET",
+    path: `/v1/tenants/${T}/field-reports`,
+    principal: viewer
+  });
+  assert.equal(viewerReports.status, 403);
+});
+
+test("paid-client principals cannot cross tenant boundaries", async () => {
+  const owner = {
+    userId: "owner-1",
+    tenantId: "tenant-residential-sim",
+    organizationRole: "client_owner",
+    projectRole: null,
+    authenticated: true,
+    staged: false
+  };
+  assert.equal(
+    (await request({ method: "GET", path: `/v1/tenants/${T}/client-portal`, principal: owner })).status,
+    403
+  );
 });
 
 test("RBAC: principal from another tenant is denied (no cross-tenant)", async () => {

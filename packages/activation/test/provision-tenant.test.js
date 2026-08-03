@@ -38,11 +38,57 @@ test("canonical provisioning input is stable across user order", () => {
   assert.deepEqual(normalizeProvisioningInput(original), normalizeProvisioningInput(reversed));
 });
 
+test("provisioning creates deterministic OIDC bindings for canonical users", () => {
+  const configured = input();
+  configured.oidcIssuer = "https://issuer.example.com/";
+  configured.users = configured.users.map((user) => ({
+    ...user,
+    oidcSubject: `subject-${user.role}`
+  }));
+
+  const records = buildStagedTenantProvisioning(configured, {
+    now: () => "2026-08-02T00:00:00.000Z"
+  });
+
+  assert.deepEqual(records.oidcIdentities, [
+    {
+      id: "tenant-alpha-oidc-1",
+      tenantId: "tenant-alpha",
+      userId: "tenant-alpha-user-1",
+      issuer: "https://issuer.example.com/",
+      subject: "subject-client_owner",
+      staged: true
+    },
+    {
+      id: "tenant-alpha-oidc-2",
+      tenantId: "tenant-alpha",
+      userId: "tenant-alpha-user-2",
+      issuer: "https://issuer.example.com/",
+      subject: "subject-client_staff",
+      staged: true
+    }
+  ]);
+});
+
 test("provisioning remains staged-only and requires an owner", () => {
   assert.throws(() => normalizeProvisioningInput({ ...input(), staged: false }), /staged=true/);
   assert.throws(
     () => normalizeProvisioningInput({ ...input(), users: [{ email: "staff@alpha.invalid", displayName: "Staff", role: "client_staff" }] }),
     /client_owner/
+  );
+  assert.throws(
+    () => normalizeProvisioningInput({
+      ...input(),
+      users: input().users.map((user) => ({ ...user, oidcSubject: "duplicate" }))
+    }),
+    /OIDC subjects must be unique/
+  );
+  assert.throws(
+    () => normalizeProvisioningInput({
+      ...input(),
+      users: input().users.map((user, index) => index === 0 ? { ...user, oidcSubject: "subject-1" } : user)
+    }),
+    /OIDC issuer is required/
   );
 });
 
