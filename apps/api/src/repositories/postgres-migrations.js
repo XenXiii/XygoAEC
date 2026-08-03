@@ -8,6 +8,10 @@ export const POSTGRES_MIGRATIONS = [
   {
     version: "0002_paid_client_provisioning",
     url: new URL("../../../../infrastructure/migrations/postgres/0002_paid_client_provisioning.sql", import.meta.url)
+  },
+  {
+    version: "0003_oidc_authorization",
+    url: new URL("../../../../infrastructure/migrations/postgres/0003_oidc_authorization.sql", import.meta.url)
   }
 ];
 

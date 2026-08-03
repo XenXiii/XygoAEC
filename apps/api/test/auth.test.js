@@ -8,6 +8,14 @@ import { createStaticJwks } from "../src/auth/jwks.js";
 import { resolveOidcPrincipal, resolveStagedPrincipal } from "../src/auth/principal.js";
 import { handleApiRequest } from "../src/handlers.js";
 import { createMemoryRepository } from "../src/repositories/memory.js";
+import { POSTGRES_MIGRATIONS } from "../src/repositories/postgres-migrations.js";
+
+test("OIDC authorization migration is registered for every Postgres environment", () => {
+  assert.deepEqual(
+    POSTGRES_MIGRATIONS.map(({ version }) => version),
+    ["0001_init", "0002_paid_client_provisioning", "0003_oidc_authorization"]
+  );
+});
 
 // --- Test key material + JWT signer (RS256) ----------------------------------
 
