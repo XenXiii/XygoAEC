@@ -1,5 +1,33 @@
 import { AuthError } from "./jwt.js";
 
+const SUPPORTED_OIDC_ALGORITHMS = new Set(["RS256", "RS384", "RS512"]);
+const MAX_CLOCK_TOLERANCE_SEC = 300;
+
+function normalizedString(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function parseStagedMode(value) {
+  if (value === undefined) return true;
+  if (value === true || value === false) return value;
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === "true" || normalized === "1") return true;
+  if (normalized === "false" || normalized === "0") return false;
+  throw new AuthError("config_error", "STAGED_MODE must be true or false.");
+}
+
+function assertHttpsUrl(value, label) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new AuthError("config_error", `${label} must be an absolute HTTPS URL in production.`);
+  }
+  if (url.protocol !== "https:") {
+    throw new AuthError("unsafe_config", `${label} must use HTTPS in production.`);
+  }
+}
+
 // Build the auth configuration from environment. Two modes:
 //  - "staged"  (default): self-asserted tenant header. NON-PRODUCTION.
 //  - "oidc": verify managed-IdP JWTs (Auth0/Clerk/Cognito) via JWKS.
@@ -10,24 +38,25 @@ export function loadAuthConfig(env = process.env) {
     throw new Error(`Unknown XYGO_AUTH_MODE: ${mode} (expected "staged" or "oidc").`);
   }
 
-  const stagedModeEnabled = env.STAGED_MODE !== "false" && env.STAGED_MODE !== false;
+  const stagedModeEnabled = parseStagedMode(env.STAGED_MODE);
+  const productionMode = String(env.NODE_ENV ?? "").trim().toLowerCase() === "production" || !stagedModeEnabled;
 
   const config = {
     mode,
     stagedModeEnabled,
+    productionMode,
     oidc: null
   };
 
   if (mode === "oidc") {
-    const issuer = env.XYGO_OIDC_ISSUER ?? null;
-    const audience = env.XYGO_OIDC_AUDIENCE ?? null;
+    const issuer = normalizedString(env.XYGO_OIDC_ISSUER);
+    const audience = normalizedString(env.XYGO_OIDC_AUDIENCE);
+    const configuredAlgorithms = normalizedString(env.XYGO_OIDC_ALLOWED_ALGORITHMS) ?? "RS256";
     config.oidc = {
       issuer,
       audience,
-      jwksUri: env.XYGO_OIDC_JWKS_URI ?? (issuer ? `${issuer.replace(/\/$/, "")}/.well-known/jwks.json` : null),
-      tenantClaim: env.XYGO_OIDC_TENANT_CLAIM ?? "org_id",
-      rolesClaim: env.XYGO_OIDC_ROLES_CLAIM ?? "https://xygo/org_role",
-      projectRoleClaim: env.XYGO_OIDC_PROJECT_ROLE_CLAIM ?? "https://xygo/project_role",
+      jwksUri: normalizedString(env.XYGO_OIDC_JWKS_URI) ?? (issuer ? `${issuer.replace(/\/$/, "")}/.well-known/jwks.json` : null),
+      allowedAlgorithms: configuredAlgorithms.split(",").map((value) => value.trim()).filter(Boolean),
       clockToleranceSec: Number(env.XYGO_OIDC_CLOCK_TOLERANCE_SEC ?? 60)
     };
   }
@@ -37,7 +66,14 @@ export function loadAuthConfig(env = process.env) {
 
 // Startup safety gate (B3): the runtime must not silently run in an inconsistent
 // trust posture. Called before the server starts accepting requests.
-export function assertAuthConfig(config) {
+export function assertAuthConfig(config, { repositoryMode = null } = {}) {
+  if (config.productionMode && config.mode !== "oidc") {
+    throw new AuthError(
+      "unsafe_config",
+      "Production mode requires XYGO_AUTH_MODE=oidc; staged identity cannot be enabled."
+    );
+  }
+
   if (config.mode === "oidc") {
     if (!config.oidc?.issuer || !config.oidc?.audience) {
       throw new AuthError(
@@ -47,6 +83,36 @@ export function assertAuthConfig(config) {
     }
     if (!config.oidc.jwksUri) {
       throw new AuthError("config_error", "OIDC mode requires a resolvable JWKS URI.");
+    }
+    if (
+      !Array.isArray(config.oidc.allowedAlgorithms) ||
+      config.oidc.allowedAlgorithms.length === 0 ||
+      config.oidc.allowedAlgorithms.some((algorithm) => !SUPPORTED_OIDC_ALGORITHMS.has(algorithm))
+    ) {
+      throw new AuthError(
+        "config_error",
+        "XYGO_OIDC_ALLOWED_ALGORITHMS must contain one or more supported RSA algorithms."
+      );
+    }
+    if (
+      !Number.isFinite(config.oidc.clockToleranceSec) ||
+      config.oidc.clockToleranceSec < 0 ||
+      config.oidc.clockToleranceSec > MAX_CLOCK_TOLERANCE_SEC
+    ) {
+      throw new AuthError(
+        "config_error",
+        `XYGO_OIDC_CLOCK_TOLERANCE_SEC must be between 0 and ${MAX_CLOCK_TOLERANCE_SEC}.`
+      );
+    }
+    if (config.productionMode) {
+      assertHttpsUrl(config.oidc.issuer, "XYGO_OIDC_ISSUER");
+      assertHttpsUrl(config.oidc.jwksUri, "XYGO_OIDC_JWKS_URI");
+    }
+    if (repositoryMode !== "postgres") {
+      throw new AuthError(
+        "unsafe_config",
+        "XYGO_AUTH_MODE=oidc requires XYGO_API_REPOSITORY_MODE=postgres for canonical tenant and role resolution."
+      );
     }
     return;
   }

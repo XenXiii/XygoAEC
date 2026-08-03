@@ -152,6 +152,7 @@ export function createPostgresRepository({
       tenant: one(await client.query("SELECT payload FROM tenants WHERE id = $1", [tenantId])),
       users: await scopedPayloads("users"),
       roleAssignments: await scopedPayloads("role_assignments"),
+      oidcIdentities: await scopedPayloads("oidc_identities"),
       businessProfile: one(await client.query("SELECT payload FROM business_profiles WHERE tenant_id = $1", [tenantId])),
       project: one(await client.query("SELECT payload FROM projects WHERE tenant_id = $1 ORDER BY created_at LIMIT 1", [tenantId])),
       blueprint: one(await client.query("SELECT payload FROM platform_blueprints WHERE tenant_id = $1 ORDER BY created_at LIMIT 1", [tenantId])),
@@ -196,6 +197,12 @@ export function createPostgresRepository({
           await client.query(
             "INSERT INTO role_assignments (id, tenant_id, user_id, role, payload) VALUES ($1,$2,$3,$4,$5)",
             [assignment.id, tenantId, assignment.userId, assignment.role, assignment]
+          );
+        }
+        for (const identity of records.oidcIdentities) {
+          await client.query(
+            "INSERT INTO oidc_identities (id, issuer, subject, tenant_id, user_id, payload) VALUES ($1,$2,$3,$4,$5,$6)",
+            [identity.id, identity.issuer, identity.subject, tenantId, identity.userId, identity]
           );
         }
         await client.query(
@@ -256,6 +263,7 @@ export function createPostgresRepository({
           tenant: records.tenant,
           users: records.users,
           roleAssignments: records.roleAssignments,
+          oidcIdentities: records.oidcIdentities,
           businessProfile: records.businessProfile,
           project: records.project,
           blueprint: records.blueprint,
@@ -273,6 +281,30 @@ export function createPostgresRepository({
     },
     async listRoleAssignmentsByTenant(tenantId) {
       return payloads(await query("SELECT payload FROM role_assignments WHERE tenant_id = $1 ORDER BY id", [tenantId]));
+    },
+    async listOidcIdentitiesByTenant(tenantId) {
+      return payloads(await query("SELECT payload FROM oidc_identities WHERE tenant_id = $1 ORDER BY id", [tenantId]));
+    },
+    async resolveOidcAuthorization({ issuer, subject }) {
+      const result = await query(
+        "SELECT i.user_id, i.tenant_id, r.role " +
+          "FROM oidc_identities i " +
+          "JOIN users u ON u.id = i.user_id AND u.tenant_id = i.tenant_id " +
+          "JOIN tenants t ON t.id = i.tenant_id " +
+          "JOIN role_assignments r ON r.user_id = i.user_id AND r.tenant_id = i.tenant_id " +
+          "WHERE i.issuer = $1 AND i.subject = $2 AND u.status = 'active' AND t.status = 'active'",
+        [issuer, subject]
+      );
+      if (result.rows.length === 0) return { status: "not_found" };
+      if (result.rows.length !== 1) return { status: "ambiguous" };
+      const row = result.rows[0];
+      return {
+        status: "active",
+        userId: row.user_id,
+        tenantId: row.tenant_id,
+        organizationRole: row.role,
+        projectRole: null
+      };
     },
     async getBusinessProfileByTenant(tenantId) {
       return one(await query("SELECT payload FROM business_profiles WHERE tenant_id = $1", [tenantId]));

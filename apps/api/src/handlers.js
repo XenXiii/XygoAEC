@@ -505,8 +505,15 @@ const collectionResources = [
       !parsed?.id || !parsed?.projectId || !parsed?.siteName || !parsed?.reportType || !parsed?.author
         ? "Field report id, projectId, siteName, reportType, and author are required."
         : null,
-    guard: ({ parsed, tenantId }) =>
-      parsed.tenantId && parsed.tenantId !== tenantId ? "Cross-tenant field report creation denied." : null,
+    guard: async ({ parsed, tenantId, repository }) => {
+      if (parsed.tenantId && parsed.tenantId !== tenantId) {
+        return "Cross-tenant field report creation denied.";
+      }
+      const project = await repository.getProjectById(parsed.projectId);
+      return !project || project.tenantId !== tenantId
+        ? "Field report creation requires an in-tenant project."
+        : null;
+    },
     build: (parsed, tenantId) => ({
       id: parsed.id,
       tenantId,

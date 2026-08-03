@@ -37,10 +37,16 @@ The Postgres repository applies ordered SQL migrations at connection startup and
 
 1. `0001_init.sql`
 2. `0002_paid_client_provisioning.sql`
+3. `0003_oidc_authorization.sql`
 
 The second migration adds canonical users, paid-client role assignments, business profiles, portal
 configuration, portal seed data, and provisioning events. Provisioning also uses the existing
 projects, platform-blueprints, tenants, and audit-event tables.
+
+The third migration adds explicit OIDC issuer/subject bindings. A verified token identifies an OIDC
+subject, but the API derives the internal user, tenant, and paid-client role only from the matching
+active Postgres user, tenant, role assignment, and identity binding. Token tenant and role claims do
+not authorize access.
 
 The conformance suite checks the actual table names, recorded migration versions, canonical
 repository reads, cross-tenant project/user separation, portal branding/update separation,
@@ -62,3 +68,34 @@ back the entire tenant.
 
 This flow does not change `XYGO_AUTH_MODE`. Until real OIDC activation is completed, only synthetic
 staging data may be provisioned.
+
+## Bind A Provisioned User To OIDC
+
+Once the managed identity provider has created a user, add the configured issuer once and that
+user's provider subject to the secure provisioning input:
+
+```json
+{
+  "staged": true,
+  "slug": "client-slug",
+  "businessName": "Client Business",
+  "projectName": "Starter Project",
+  "oidcIssuer": "https://issuer.example.com/",
+  "users": [
+    {
+      "email": "owner@example.invalid",
+      "displayName": "Client Owner",
+      "role": "client_owner",
+      "oidcSubject": "provider-subject-from-secure-admin-channel"
+    }
+  ]
+}
+```
+
+The input file remains outside the repository. The issuer must exactly match `XYGO_OIDC_ISSUER` at
+runtime. OIDC mode requires `XYGO_API_REPOSITORY_MODE=postgres`; startup fails closed for file,
+SQLite, or memory repositories. A runtime marked by `NODE_ENV=production` or `STAGED_MODE=false`
+also refuses to start with staged authentication, non-HTTPS issuer/JWKS URLs, invalid clock
+tolerance, or an unsupported signing-algorithm allowlist. `RS256` is the default allowed algorithm.
+Self-asserted staged headers are not considered in OIDC mode, and query-string authentication is
+limited to the tenant SSE transport that cannot set an authorization header.

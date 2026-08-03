@@ -32,7 +32,8 @@ function rateLimitKey(req) {
 
 export function createServer({ env = process.env, logger = rootLogger, metrics = createMetrics() } = {}) {
   const authConfig = loadAuthConfig(env);
-  assertAuthConfig(authConfig);
+  const repositoryMode = env.XYGO_API_REPOSITORY_MODE ?? "sqlite";
+  assertAuthConfig(authConfig, { repositoryMode });
   if (authConfig.mode === "staged") {
     assertStagedMode({ STAGED_MODE: authConfig.stagedModeEnabled });
   }
@@ -117,7 +118,14 @@ export function createServer({ env = process.env, logger = rootLogger, metrics =
 
     if (isStream) {
       const tenantId = parts[2];
-      resolvePrincipal({ headers: req.headers, searchParams: url.searchParams, config: authConfig, jwks })
+      resolvePrincipal({
+        headers: req.headers,
+        searchParams: url.searchParams,
+        config: authConfig,
+        jwks,
+        repository,
+        allowQueryAuth: true
+      })
         .then((principal) => {
           if (!principal?.tenantId || principal.tenantId !== tenantId) {
             sendJson(res, 403, { error: "forbidden", message: "Tenant access denied.", staged: true });
@@ -171,7 +179,7 @@ export function createServer({ env = process.env, logger = rootLogger, metrics =
       clearTimeout(timeout);
       const body = chunks.length > 0 ? Buffer.concat(chunks).toString("utf8") : null;
 
-      resolvePrincipal({ headers: req.headers, searchParams: url.searchParams, config: authConfig, jwks })
+      resolvePrincipal({ headers: req.headers, config: authConfig, jwks, repository })
         .then(async (principal) => {
           const result = await handleApiRequest({
             method: req.method,
