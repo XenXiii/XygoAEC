@@ -19,7 +19,7 @@
     "test:foundation": "node --test packages/{shared-contracts,auth,authorization,audit}/test/**/*.test.js",
     "verify:audit": "node ./packages/audit/src/verify.js",
     "test:api": "node --test apps/api/test/**/*.test.js",
-    "test:postgres": "node --test apps/api/test/postgres-conformance.test.js",
+    "test:postgres": "node --test --test-concurrency=1 apps/api/test/postgres-conformance.test.js apps/api/test/paid-client-activation-e2e.test.js",
     "test:web": "node --test apps/web/test/**/*.test.js"
   },
   "dependencies": {

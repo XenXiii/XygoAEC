@@ -978,10 +978,22 @@ async function routeApiRequest({
       return denied;
     }
 
-    const [projects, reports] = await Promise.all([
+    const [projects, reports, storedPortalConfiguration, storedPortalData] = await Promise.all([
       repository.listProjectsByTenant(tenantId),
-      repository.listFieldReportsByTenant(tenantId)
+      repository.listFieldReportsByTenant(tenantId),
+      typeof repository.getPortalConfigurationByTenant === "function"
+        ? repository.getPortalConfigurationByTenant(tenantId)
+        : null,
+      typeof repository.getPortalDataByTenant === "function"
+        ? repository.getPortalDataByTenant(tenantId)
+        : null
     ]);
+    const portalConfiguration = storedPortalConfiguration?.tenantId === tenantId
+      ? storedPortalConfiguration
+      : null;
+    const portalData = storedPortalData?.tenantId === tenantId
+      ? storedPortalData
+      : null;
 
     const portals = projects.map((project) => {
       const approvedReports = reports
@@ -993,13 +1005,21 @@ async function routeApiRequest({
         project,
         approvedReports,
         files: syntheticFileRecords.filter((file) => file.tenantId === tenantId && file.projectId === project.id),
-        updates: syntheticPortalUpdates.filter(
-          (update) => update.tenantId === tenantId && update.projectId === project.id
-        )
+        updates: [
+          ...syntheticPortalUpdates.filter(
+            (update) => update.tenantId === tenantId && update.projectId === project.id
+          ),
+          ...(portalData?.projectId === project.id ? portalData.updates ?? [] : [])
+        ]
       });
     });
 
-    return json(200, { items: portals, staged: true });
+    return json(200, {
+      items: portals,
+      configuration: portalConfiguration,
+      welcomeMessage: portalData?.welcomeMessage ?? null,
+      staged: true
+    });
   }
 
   return notFound();
