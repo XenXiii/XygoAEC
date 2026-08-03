@@ -12,11 +12,14 @@
     "start:api": "node apps/api/src/server.js",
     "start:web": "node apps/web/src/server.js",
     "start:worker": "node apps/worker/src/worker.js",
-    "test": "node --test packages/*/test/**/*.test.js apps/*/test/**/*.test.js",
+    "provision:tenant": "node scripts/provision-staged-tenant.mjs",
+    "migrate:postgres": "node scripts/migrate-postgres.mjs",
+    "test": "XYGO_API_REPOSITORY_MODE=memory node --test packages/*/test/**/*.test.js apps/*/test/**/*.test.js",
     "test:staged-mode": "node --test packages/staged-mode/test/**/*.test.js",
     "test:foundation": "node --test packages/{shared-contracts,auth,authorization,audit}/test/**/*.test.js",
     "verify:audit": "node ./packages/audit/src/verify.js",
     "test:api": "node --test apps/api/test/**/*.test.js",
+    "test:postgres": "node --test apps/api/test/postgres-conformance.test.js",
     "test:web": "node --test apps/web/test/**/*.test.js"
   },
   "dependencies": {
