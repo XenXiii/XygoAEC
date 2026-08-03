@@ -112,7 +112,7 @@ export function createPostgresRepository({
     for (const row of state.reviewSessions) {
       await p.query(
         "INSERT INTO review_sessions (id, tenant_id, project_id, created_by, status, payload) VALUES ($1,$2,$3,$4,$5,$6)",
-        [row.id, row.tenantId, row.projectId, row.createdBy, row.status, row]
+        [row.id, row.tenantId, row.projectId, row.createdBy, row.status ?? "open", row]
       );
     }
     for (const row of state.aiReviewRuns) {
