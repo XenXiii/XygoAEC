@@ -1,53 +1,78 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import test from "node:test";
 
-import { provisionStagedTenant, readProvisioningStore } from "../src/provision-tenant.js";
+import { runPostgresTransaction } from "../../../apps/api/src/repositories/postgres.js";
+import { buildStagedTenantProvisioning, normalizeProvisioningInput } from "../src/provision-tenant.js";
 
-function input(slug, email) {
+function input(slug = "alpha") {
   return {
-    staged: true, slug, businessName: `${slug} Contracting`, projectName: `${slug} Starter Project`,
-    users: [{ email, displayName: `${slug} Owner`, role: "client_owner" }]
+    staged: true,
+    slug,
+    businessName: `${slug} Contracting`,
+    projectName: `${slug} Starter Project`,
+    users: [
+      { email: `staff@${slug}.invalid`, displayName: `${slug} Staff`, role: "client_staff" },
+      { email: `owner@${slug}.invalid`, displayName: `${slug} Owner`, role: "client_owner" }
+    ]
   };
 }
 
-test("staged tenant provisioning is idempotent", () => {
-  const storePath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "xygo-provision-")), "store.json");
-  const now = () => "2026-08-02T00:00:00.000Z";
-  const first = provisionStagedTenant({ storePath, input: input("alpha", "owner@alpha.invalid"), now });
-  const second = provisionStagedTenant({ storePath, input: input("alpha", "owner@alpha.invalid"), now });
-  const state = readProvisioningStore(storePath);
+test("provisioning records use deterministic canonical ids and tenant scope", () => {
+  const records = buildStagedTenantProvisioning(input(), {
+    now: () => "2026-08-02T00:00:00.000Z"
+  });
 
-  assert.equal(first.created, true);
-  assert.equal(second.created, false);
-  assert.equal(state.tenants.filter((item) => item.id === "tenant-alpha").length, 1);
-  assert.equal(state.projects.filter((item) => item.tenantId === "tenant-alpha").length, 1);
-  assert.equal(state.provisioningEvents.filter((item) => item.tenantId === "tenant-alpha").length, 1);
+  assert.equal(records.tenant.id, "tenant-alpha");
+  assert.equal(records.project.id, "tenant-alpha-project-1");
+  assert.equal(records.blueprint.tenantId, "tenant-alpha");
+  assert.equal(records.portalConfiguration.approvedContentOnly, true);
+  assert.equal(records.portalData.updates[0].message, "alpha Contracting staged portal provisioned.");
+  assert.deepEqual(records.roleAssignments.map((item) => item.role), ["client_owner", "client_staff"]);
+  assert.ok(records.users.every((item) => item.tenantId === "tenant-alpha"));
+  assert.equal(records.provisioningEvent.action, "staged_tenant.provisioned");
 });
 
-test("provisioning a second tenant keeps every record tenant-isolated", () => {
-  const storePath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "xygo-provision-")), "store.json");
-  provisionStagedTenant({ storePath, input: input("alpha", "owner@alpha.invalid") });
-  provisionStagedTenant({ storePath, input: input("bravo", "owner@bravo.invalid") });
-  const state = readProvisioningStore(storePath);
-
-  for (const collection of ["users", "roleAssignments", "businessProfiles", "projects", "platformBlueprints", "portalConfigurations", "portalData"]) {
-    const alpha = state[collection].filter((item) => item.tenantId === "tenant-alpha");
-    const bravo = state[collection].filter((item) => item.tenantId === "tenant-bravo");
-    assert.ok(alpha.length > 0, `${collection} has alpha records`);
-    assert.ok(bravo.length > 0, `${collection} has bravo records`);
-    assert.equal(alpha.some((item) => item.tenantId === "tenant-bravo"), false);
-    assert.equal(bravo.some((item) => item.tenantId === "tenant-alpha"), false);
-  }
+test("canonical provisioning input is stable across user order", () => {
+  const original = input();
+  const reversed = { ...original, users: [...original.users].reverse() };
+  assert.deepEqual(normalizeProvisioningInput(original), normalizeProvisioningInput(reversed));
 });
 
-test("an existing slug cannot be silently reprovisioned with different input", () => {
-  const storePath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "xygo-provision-")), "store.json");
-  provisionStagedTenant({ storePath, input: input("alpha", "owner@alpha.invalid") });
+test("provisioning remains staged-only and requires an owner", () => {
+  assert.throws(() => normalizeProvisioningInput({ ...input(), staged: false }), /staged=true/);
   assert.throws(
-    () => provisionStagedTenant({ storePath, input: input("alpha", "different@alpha.invalid") }),
-    /different provisioning input/
+    () => normalizeProvisioningInput({ ...input(), users: [{ email: "staff@alpha.invalid", displayName: "Staff", role: "client_staff" }] }),
+    /client_owner/
   );
+});
+
+test("postgres transaction commits on success", async () => {
+  const statements = [];
+  const client = {
+    query: async (text) => statements.push(text),
+    release: () => statements.push("RELEASE")
+  };
+  const result = await runPostgresTransaction({ connect: async () => client }, async (transaction) => {
+    await transaction.query("INSERT TEST RECORD");
+    return "ok";
+  });
+
+  assert.equal(result, "ok");
+  assert.deepEqual(statements, ["BEGIN", "INSERT TEST RECORD", "COMMIT", "RELEASE"]);
+});
+
+test("postgres transaction rolls back and releases on an error", async () => {
+  const statements = [];
+  const client = {
+    query: async (text) => statements.push(text),
+    release: () => statements.push("RELEASE")
+  };
+  await assert.rejects(
+    () => runPostgresTransaction({ connect: async () => client }, async (transaction) => {
+      await transaction.query("INSERT PARTIAL RECORD");
+      throw new Error("forced provisioning failure");
+    }),
+    /forced provisioning failure/
+  );
+  assert.deepEqual(statements, ["BEGIN", "INSERT PARTIAL RECORD", "ROLLBACK", "RELEASE"]);
 });

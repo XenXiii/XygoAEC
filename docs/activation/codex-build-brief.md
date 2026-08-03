@@ -18,11 +18,17 @@ order. Implement code changes, add tests, run `npm test`, and update docs as eac
 Do not remove staged guardrails unless replacing them with production-safe authentication, tenant
 isolation, secret management, deployment controls, monitoring, and tests.
 
+## Current Release Target
+
+The current release-readiness path is web/PWA only. Native iOS, TestFlight, and App Store readiness
+are explicitly deferred and are not acceptance criteria for this release.
+
 ## First Execution Slice
 
 Status: completed in the paid-client activation first slice. The offer and onboarding checklist are
-documented, and `npm run provision:tenant` creates the staged tenant foundation with idempotency and
-tenant-isolation tests. Production activation remains blocked by the non-negotiable launch gates.
+documented, and `npm run provision:tenant` creates the staged tenant foundation transactionally in
+the canonical Postgres repository with idempotency, conflict, and rollback coverage. Production
+activation remains blocked by the non-negotiable launch gates.
 
 Start with paid-client activation documentation and provisioning:
 

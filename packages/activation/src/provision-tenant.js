@@ -1,5 +1,4 @@
-import fs from "node:fs";
-import path from "node:path";
+import crypto from "node:crypto";
 
 import {
   createProject,
@@ -25,38 +24,6 @@ function assertSlug(value) {
   return slug;
 }
 
-function initialState() {
-  return {
-    schemaVersion: 1,
-    tenants: [],
-    users: [],
-    roleAssignments: [],
-    businessProfiles: [],
-    projects: [],
-    platformBlueprints: [],
-    portalConfigurations: [],
-    portalData: [],
-    provisioningEvents: []
-  };
-}
-
-function readState(storePath) {
-  if (!fs.existsSync(storePath)) return initialState();
-  const parsed = JSON.parse(fs.readFileSync(storePath, "utf8"));
-  return { ...initialState(), ...parsed };
-}
-
-function writeState(storePath, state) {
-  fs.mkdirSync(path.dirname(storePath), { recursive: true });
-  const temporaryPath = `${storePath}.${process.pid}.tmp`;
-  try {
-    fs.writeFileSync(temporaryPath, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
-    fs.renameSync(temporaryPath, storePath);
-  } finally {
-    if (fs.existsSync(temporaryPath)) fs.rmSync(temporaryPath, { force: true });
-  }
-}
-
 function normalizeUsers(users) {
   if (!Array.isArray(users) || users.length === 0) {
     throw new Error("At least one user is required.");
@@ -77,7 +44,7 @@ function normalizeUsers(users) {
   return normalized.sort((a, b) => a.email.localeCompare(b.email));
 }
 
-function canonicalInput(input) {
+export function normalizeProvisioningInput(input) {
   if (input?.staged !== true) throw new Error("Provisioning requires staged=true.");
   return {
     slug: assertSlug(input.slug),
@@ -89,39 +56,12 @@ function canonicalInput(input) {
   };
 }
 
-function tenantRecords(state, tenantId) {
-  const scoped = (key) => state[key].filter((item) => item.tenantId === tenantId);
-  return {
-    tenant: state.tenants.find((item) => item.id === tenantId),
-    users: scoped("users"),
-    roleAssignments: scoped("roleAssignments"),
-    businessProfile: scoped("businessProfiles")[0],
-    project: scoped("projects")[0],
-    blueprint: scoped("platformBlueprints")[0],
-    portalConfiguration: scoped("portalConfigurations")[0],
-    portalData: scoped("portalData")[0]
-  };
-}
-
-export function provisionStagedTenant({ storePath, input, now = () => new Date().toISOString() }) {
-  requiredString(storePath, "Provisioning store path");
-  const config = canonicalInput(input);
+export function buildStagedTenantProvisioning(input, { now = () => new Date().toISOString() } = {}) {
+  const config = normalizeProvisioningInput(input);
   const tenantId = `tenant-${config.slug}`;
-  const state = readState(storePath);
-  const existing = state.tenants.find((tenant) => tenant.id === tenantId);
-
-  if (existing) {
-    if (existing.provisioningKey !== JSON.stringify(config)) {
-      throw new Error(`Tenant ${tenantId} already exists with different provisioning input.`);
-    }
-    return { created: false, ...tenantRecords(state, tenantId) };
-  }
-
   const createdAt = now();
-  const tenant = {
-    ...createTenant({ id: tenantId, name: config.businessName, staged: true, createdAt }),
-    provisioningKey: JSON.stringify(config)
-  };
+  const provisioningKey = crypto.createHash("sha256").update(JSON.stringify(config)).digest("hex");
+  const tenant = createTenant({ id: tenantId, name: config.businessName, staged: true, createdAt });
   const users = config.users.map((user, index) => createUser({
     id: `${tenantId}-user-${index + 1}`,
     tenantId,
@@ -162,26 +102,21 @@ export function provisionStagedTenant({ storePath, input, now = () => new Date()
   const portalData = {
     id: `${tenantId}-portal-starter`, tenantId, projectId: project.id,
     welcomeMessage: `Welcome to the ${config.brandName} project portal.`,
-    approvedReports: [], staged: true
+    approvedReports: [],
+    updates: [{
+      id: `${tenantId}-portal-update-1`,
+      at: createdAt,
+      message: `${config.brandName} staged portal provisioned.`
+    }],
+    staged: true
   };
-
-  state.tenants.push(tenant);
-  state.users.push(...users);
-  state.roleAssignments.push(...roleAssignments);
-  state.businessProfiles.push(businessProfile);
-  state.projects.push(project);
-  state.platformBlueprints.push(blueprint);
-  state.portalConfigurations.push(portalConfiguration);
-  state.portalData.push(portalData);
-  state.provisioningEvents.push({
+  const provisioningEvent = {
     id: `${tenantId}-provisioned`, tenantId, action: "staged_tenant.provisioned",
     createdAt, staged: true
-  });
-  writeState(storePath, state);
+  };
 
-  return { created: true, tenant, users, roleAssignments, businessProfile, project, blueprint, portalConfiguration, portalData };
-}
-
-export function readProvisioningStore(storePath) {
-  return readState(storePath);
+  return {
+    config, provisioningKey, tenant, users, roleAssignments, businessProfile,
+    project, blueprint, portalConfiguration, portalData, provisioningEvent
+  };
 }

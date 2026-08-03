@@ -31,9 +31,11 @@ client secrets and private data in approved systems, never in Git or fixtures.
    }
    ```
 
-2. Run `npm run provision:tenant -- --config /secure/path/client.json --approve-staged`.
-3. Save the printed tenant, project, and blueprint IDs in the approved client operations record.
-4. Re-run the same command and confirm `"created": false`; any changed input must fail instead of
+2. Obtain the approved staging Postgres URL from the secret manager and set `XYGO_API_PG_URL` in the
+   operator shell. Do not paste it into the JSON file or repository.
+3. Run `npm run provision:tenant -- --config /secure/path/client.json --approve-staged`.
+4. Save the printed tenant, project, and blueprint IDs in the approved client operations record.
+5. Re-run the same command and confirm `"created": false`; any changed input must fail instead of
    silently altering the tenant.
 
 ## Configure And Validate
@@ -45,7 +47,7 @@ client secrets and private data in approved systems, never in Git or fixtures.
 - [ ] Run a cross-tenant isolation test with a separate synthetic tenant.
 - [ ] Complete the offer demo script using synthetic data only.
 - [ ] Confirm a draft is hidden and becomes visible only after human approval.
-- [ ] Run `npm test` and attach the result to the onboarding record.
+- [ ] Run `npm test` and `npm run test:postgres` with `XYGO_TEST_PG_URL` set; attach both results.
 
 ## Training And Acceptance
 

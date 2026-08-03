@@ -10,6 +10,9 @@ Purpose: convert the completed staged Xygo V2 build into a paid-client-ready ope
 This file tracks only unfinished activation work. Do not remove staged guardrails unless replacing
 them with production-safe auth, tenant isolation, secrets, deployment, monitoring, and tests.
 
+Distribution scope: web/PWA. Native iOS, TestFlight, and App Store work is deferred and is not part
+of the current release criteria.
+
 ## Launch Definition
 
 Xygo V2 is paid-client-ready when a first contractor or home-service client can be onboarded into a
@@ -114,21 +117,23 @@ set `XYGO_API_REPOSITORY_MODE=postgres`, and run the Postgres conformance suite.
 Complete when:
 
 - Staging runs on Postgres.
-- `XYGO_TEST_PG_URL` runs the skipped Postgres test.
+- Required CI supplies `XYGO_TEST_PG_URL` and fails rather than skipping the Postgres suite.
 - Migrations are repeatable.
 - Tenant data persists across restarts.
 
 ### 7. Tenant Provisioning Flow
 
-Status: first staged provisioning slice completed; production persistence and identity-provider
-invites remain unfinished.
+Status: canonical Postgres provisioning implemented; managed-Postgres validation and
+identity-provider invites remain unfinished.
 
 Implemented: `npm run provision:tenant` creates a staged tenant, users, paid-client roles, business
 profile, starter project, deterministic blueprint, branded portal configuration, starter portal data,
-and provisioning event. Tests cover safe reruns, conflicting reruns, and second-tenant isolation.
+provisioning event, and audit event in one Postgres transaction. Tests cover stable input, transaction
+rollback, safe reruns, conflicting reruns, canonical repository reads, and failed-provision rollback.
 
-Next action: connect the same contract to managed Postgres and production identity-provider invites
-after the production activation gates are approved.
+Next action: merge and observe the required disposable-Postgres CI gate passing, then validate the
+same migrations in a managed staging Postgres environment. Production identity-provider invites
+remain deferred until the authentication gates are approved.
 
 Complete when:
 
@@ -306,9 +311,10 @@ copy.
 
 1. ~~Write the first paid offer spec for Contractor Field Reports + Client Portal.~~ Completed.
 2. ~~Create the first-client onboarding checklist.~~ Completed.
-3. ~~Create a tenant provisioning script or admin command.~~ Completed for staged activation;
-   production persistence/invites remain gated.
-4. Configure Postgres staging and run the skipped Postgres test with `XYGO_TEST_PG_URL`.
+3. ~~Create a tenant provisioning script or admin command.~~ Completed against canonical Postgres for
+   staged activation; managed-Postgres validation and production identity invites remain gated.
+4. Observe the required disposable-Postgres CI gate passing, then configure and validate managed
+   Postgres staging with the same migration and conformance commands.
 5. Add production/staging environment documentation for auth, database, secrets, web, API, and worker.
 6. Add a deployment plan with domain, HTTPS, health checks, rollback, and worker process.
 7. Draft the legal/compliance launch packet checklist.

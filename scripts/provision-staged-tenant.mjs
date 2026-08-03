@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { provisionStagedTenant } from "../packages/activation/src/provision-tenant.js";
+import { createPostgresRepository } from "../apps/api/src/repositories/postgres.js";
 
 function valueAfter(flag) {
   const index = process.argv.indexOf(flag);
@@ -14,16 +14,25 @@ if (!process.argv.includes("--approve-staged")) {
 }
 
 const configPath = valueAfter("--config");
-if (!configPath) throw new Error("Usage: npm run provision:tenant -- --config <json> --approve-staged [--store <json>]");
+if (!configPath) throw new Error("Usage: npm run provision:tenant -- --config <json> --approve-staged");
+if (!process.env.XYGO_API_PG_URL) {
+  throw new Error("XYGO_API_PG_URL is required. Provisioning only writes to the canonical Postgres repository.");
+}
 
-const storePath = path.resolve(valueAfter("--store") ?? "infrastructure/staged-data/tenant-provisioning.json");
 const input = JSON.parse(fs.readFileSync(path.resolve(configPath), "utf8"));
-const result = provisionStagedTenant({ storePath, input });
+const repository = createPostgresRepository({
+  connectionString: process.env.XYGO_API_PG_URL,
+  auditSigningKey: process.env.XYGO_AUDIT_SIGNING_KEY ?? null
+});
 
-process.stdout.write(`${JSON.stringify({
-  created: result.created,
-  tenantId: result.tenant.id,
-  projectId: result.project.id,
-  blueprintId: result.blueprint.id,
-  storePath
-}, null, 2)}\n`);
+try {
+  const result = await repository.provisionStagedTenant(input);
+  process.stdout.write(`${JSON.stringify({
+    created: result.created,
+    tenantId: result.tenant.id,
+    projectId: result.project.id,
+    blueprintId: result.blueprint.id
+  }, null, 2)}\n`);
+} finally {
+  await repository.close();
+}

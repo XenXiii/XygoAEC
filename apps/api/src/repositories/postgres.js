@@ -5,8 +5,11 @@ import { createPermitPackage } from "../../../../packages/permits/src/index.js";
 import { createReviewSession } from "../../../../packages/projects/src/index.js";
 import { generatePlatformBlueprint } from "../../../../packages/platform-blueprint/src/index.js";
 import { createFieldReport } from "../../../../packages/field-reporting/src/index.js";
+import { createAuditEvent } from "../../../../packages/audit/src/foundation.js";
+import { buildStagedTenantProvisioning } from "../../../../packages/activation/src/provision-tenant.js";
 import { createSeedState } from "./seed.js";
 import { syntheticTenants } from "../../../../packages/test-fixtures/src/synthetic-tenants.js";
+import { applyPostgresMigrations } from "./postgres-migrations.js";
 
 // Production Postgres backend. Implements the SAME async repository contract as
 // the other backends. `pg` is imported lazily so this module loads even when the
@@ -15,9 +18,30 @@ import { syntheticTenants } from "../../../../packages/test-fixtures/src/synthet
 // Postgres service (see .github/workflows/ci.yml, postgres job) — not runnable in
 // the offline dev sandbox.
 
-const MIGRATION = new URL("../../../../infrastructure/migrations/postgres/0001_init.sql", import.meta.url);
+export async function runPostgresTransaction(pool, operation) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await operation(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch (rollbackError) {
+      error.rollbackError = rollbackError;
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
 
-export function createPostgresRepository({ connectionString }) {
+export function createPostgresRepository({
+  connectionString,
+  auditSigningKey = null,
+  beforeProvisioningCommit = null
+}) {
   if (!connectionString) {
     throw new Error("connectionString is required for postgres repository.");
   }
@@ -28,10 +52,8 @@ export function createPostgresRepository({ connectionString }) {
     if (!poolPromise) {
       poolPromise = (async () => {
         const pg = (await import("pg")).default;
-        const fs = await import("node:fs");
         const p = new pg.Pool({ connectionString });
-        const sql = fs.readFileSync(MIGRATION, "utf8");
-        await p.query(sql);
+        await applyPostgresMigrations(p);
         await seed(p);
         return p;
       })();
@@ -123,7 +145,147 @@ export function createPostgresRepository({ connectionString }) {
   const payloads = (result) => result.rows.map((r) => r.payload);
   const one = (result) => (result.rows[0] ? result.rows[0].payload : null);
 
+  async function readProvisionedTenant(client, tenantId) {
+    const scopedPayloads = async (table) =>
+      payloads(await client.query(`SELECT payload FROM ${table} WHERE tenant_id = $1 ORDER BY id`, [tenantId]));
+    return {
+      tenant: one(await client.query("SELECT payload FROM tenants WHERE id = $1", [tenantId])),
+      users: await scopedPayloads("users"),
+      roleAssignments: await scopedPayloads("role_assignments"),
+      businessProfile: one(await client.query("SELECT payload FROM business_profiles WHERE tenant_id = $1", [tenantId])),
+      project: one(await client.query("SELECT payload FROM projects WHERE tenant_id = $1 ORDER BY created_at LIMIT 1", [tenantId])),
+      blueprint: one(await client.query("SELECT payload FROM platform_blueprints WHERE tenant_id = $1 ORDER BY created_at LIMIT 1", [tenantId])),
+      portalConfiguration: one(await client.query("SELECT payload FROM portal_configurations WHERE tenant_id = $1", [tenantId])),
+      portalData: one(await client.query("SELECT payload FROM portal_data WHERE tenant_id = $1", [tenantId])),
+      provisioningEvent: one(await client.query("SELECT payload FROM provisioning_events WHERE tenant_id = $1 ORDER BY created_at LIMIT 1", [tenantId]))
+    };
+  }
+
   return {
+    async provisionStagedTenant(input) {
+      const records = buildStagedTenantProvisioning(input);
+      const tenantId = records.tenant.id;
+      const p = await pool();
+
+      return runPostgresTransaction(p, async (client) => {
+        // Serialize same-tenant attempts, including the first insert where no row
+        // exists yet. This preserves idempotency under concurrent admin commands.
+        await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [tenantId]);
+        const existing = await client.query(
+          "SELECT provisioning_key FROM tenants WHERE id = $1",
+          [tenantId]
+        );
+        if (existing.rows[0]) {
+          if (existing.rows[0].provisioning_key !== records.provisioningKey) {
+            throw new Error(`Tenant ${tenantId} already exists with different provisioning input.`);
+          }
+          return { created: false, ...(await readProvisionedTenant(client, tenantId)) };
+        }
+
+        await client.query(
+          "INSERT INTO tenants (id, name, status, staged, provisioning_key, payload, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+          [tenantId, records.tenant.name, records.tenant.status, true, records.provisioningKey, records.tenant, records.tenant.createdAt]
+        );
+        for (const user of records.users) {
+          await client.query(
+            "INSERT INTO users (id, tenant_id, email, display_name, status, payload) VALUES ($1,$2,$3,$4,$5,$6)",
+            [user.id, tenantId, user.email, user.displayName, user.status, user]
+          );
+        }
+        for (const assignment of records.roleAssignments) {
+          await client.query(
+            "INSERT INTO role_assignments (id, tenant_id, user_id, role, payload) VALUES ($1,$2,$3,$4,$5)",
+            [assignment.id, tenantId, assignment.userId, assignment.role, assignment]
+          );
+        }
+        await client.query(
+          "INSERT INTO business_profiles (id, tenant_id, legal_name, service_line, payload) VALUES ($1,$2,$3,$4,$5)",
+          [records.businessProfile.id, tenantId, records.businessProfile.legalName, records.businessProfile.serviceLine, records.businessProfile]
+        );
+        await client.query(
+          "INSERT INTO projects (id, tenant_id, name, project_type, status, payload) VALUES ($1,$2,$3,$4,$5,$6)",
+          [records.project.id, tenantId, records.project.name, records.project.projectType, records.project.status, records.project]
+        );
+        await client.query(
+          "INSERT INTO platform_blueprints (id, tenant_id, industry, payload) VALUES ($1,$2,$3,$4)",
+          [records.blueprint.id, tenantId, records.blueprint.industry, records.blueprint]
+        );
+        await client.query(
+          "INSERT INTO portal_configurations (id, tenant_id, brand_name, primary_color, approved_content_only, payload) VALUES ($1,$2,$3,$4,$5,$6)",
+          [records.portalConfiguration.id, tenantId, records.portalConfiguration.brandName, records.portalConfiguration.primaryColor, true, records.portalConfiguration]
+        );
+        await client.query(
+          "INSERT INTO portal_data (id, tenant_id, project_id, payload) VALUES ($1,$2,$3,$4)",
+          [records.portalData.id, tenantId, records.portalData.projectId, records.portalData]
+        );
+        await client.query(
+          "INSERT INTO provisioning_events (id, tenant_id, action, payload, created_at) VALUES ($1,$2,$3,$4,$5)",
+          [records.provisioningEvent.id, tenantId, records.provisioningEvent.action, records.provisioningEvent, records.provisioningEvent.createdAt]
+        );
+
+        const previousAudit = await client.query(
+          "SELECT payload FROM audit_events WHERE tenant_id = $1 ORDER BY seq DESC LIMIT 1",
+          [tenantId]
+        );
+        const auditEvent = createAuditEvent({
+          eventId: `${tenantId}-provisioning-audit`,
+          tenantId,
+          actorType: "system",
+          actorId: "tenant-provisioner",
+          action: "staged_tenant.provisioned",
+          resourceType: "tenant",
+          resourceId: tenantId,
+          afterStateRef: records.provisioningEvent.id,
+          correlationId: records.provisioningEvent.id,
+          requestId: records.provisioningEvent.id,
+          timestamp: records.provisioningEvent.createdAt,
+          previousHash: previousAudit.rows[0]?.payload?.eventHash ?? null,
+          signingKey: auditSigningKey
+        });
+        await client.query(
+          "INSERT INTO audit_events (event_id, tenant_id, action, resource_type, resource_id, previous_hash, event_hash, signature, payload) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+          [auditEvent.eventId, tenantId, auditEvent.action, auditEvent.resourceType, auditEvent.resourceId, auditEvent.previousHash, auditEvent.eventHash, auditEvent.signature ?? null, auditEvent]
+        );
+
+        if (beforeProvisioningCommit) {
+          await beforeProvisioningCommit({ client, records });
+        }
+
+        return {
+          created: true,
+          tenant: records.tenant,
+          users: records.users,
+          roleAssignments: records.roleAssignments,
+          businessProfile: records.businessProfile,
+          project: records.project,
+          blueprint: records.blueprint,
+          portalConfiguration: records.portalConfiguration,
+          portalData: records.portalData,
+          provisioningEvent: records.provisioningEvent
+        };
+      });
+    },
+    async getTenantById(tenantId) {
+      return one(await query("SELECT payload FROM tenants WHERE id = $1", [tenantId]));
+    },
+    async listUsersByTenant(tenantId) {
+      return payloads(await query("SELECT payload FROM users WHERE tenant_id = $1 ORDER BY id", [tenantId]));
+    },
+    async listRoleAssignmentsByTenant(tenantId) {
+      return payloads(await query("SELECT payload FROM role_assignments WHERE tenant_id = $1 ORDER BY id", [tenantId]));
+    },
+    async getBusinessProfileByTenant(tenantId) {
+      return one(await query("SELECT payload FROM business_profiles WHERE tenant_id = $1", [tenantId]));
+    },
+    async getPortalConfigurationByTenant(tenantId) {
+      return one(await query("SELECT payload FROM portal_configurations WHERE tenant_id = $1", [tenantId]));
+    },
+    async getPortalDataByTenant(tenantId) {
+      return one(await query("SELECT payload FROM portal_data WHERE tenant_id = $1", [tenantId]));
+    },
+    async listProvisioningEventsByTenant(tenantId) {
+      return payloads(await query("SELECT payload FROM provisioning_events WHERE tenant_id = $1 ORDER BY created_at", [tenantId]));
+    },
     async listProjectsByTenant(tenantId) {
       return payloads(await query("SELECT payload FROM projects WHERE tenant_id = $1", [tenantId]));
     },

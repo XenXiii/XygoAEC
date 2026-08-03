@@ -23,16 +23,20 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-      # The core suite needs no dependencies (pg is imported lazily and its
-      # conformance test skips unless XYGO_TEST_PG_URL is set).
+      - name: Install dependencies
+        run: npm ci
       - name: Run full test suite
         run: npm test
       - name: Verify audit chain
         run: npm run verify:audit
 
   postgres:
-    name: Postgres backend conformance
+    name: Required Postgres migration and conformance gate
     runs-on: ubuntu-latest
+    env:
+      XYGO_TEST_PG_URL: postgres://xygo:xygo@localhost:5432/xygo_test
+      XYGO_API_PG_URL: postgres://xygo:xygo@localhost:5432/xygo_test
+      XYGO_REQUIRE_PG_TESTS: "true"
     services:
       postgres:
         image: postgres:16
@@ -43,7 +47,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U xygo"
+          --health-cmd "pg_isready -U xygo -d xygo_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -52,9 +56,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24.x"
-      - name: Install pg driver
-        run: npm install --no-save pg
-      - name: Run postgres conformance suite
-        env:
-          XYGO_TEST_PG_URL: postgres://xygo:xygo@localhost:5432/xygo_test
-        run: node --test apps/api/test/postgres-conformance.test.js
+      - name: Install dependencies
+        run: npm ci
+      - name: Apply Postgres migrations to clean database
+        run: npm run migrate:postgres
+      - name: Reapply Postgres migrations (idempotency gate)
+        run: npm run migrate:postgres
+      - name: Run required Postgres conformance suite
+        run: npm run test:postgres
