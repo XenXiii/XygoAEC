@@ -4,8 +4,8 @@ import assert from "node:assert/strict";
 
 import { AuthError, verifyJwt } from "../src/auth/jwt.js";
 import { assertAuthConfig, loadAuthConfig } from "../src/auth/config.js";
-import { createStaticJwks } from "../src/auth/jwks.js";
-import { resolveOidcPrincipal, resolveStagedPrincipal } from "../src/auth/principal.js";
+import { createRemoteJwks, createStaticJwks } from "../src/auth/jwks.js";
+import { resolveOidcPrincipal, resolvePrincipal, resolveStagedPrincipal } from "../src/auth/principal.js";
 import { handleApiRequest } from "../src/handlers.js";
 import { createMemoryRepository } from "../src/repositories/memory.js";
 import { POSTGRES_MIGRATIONS } from "../src/repositories/postgres-migrations.js";
@@ -26,6 +26,11 @@ const KEYS = [jwk];
 
 const ISSUER = "https://issuer.example.com/";
 const AUDIENCE = "xygo-api";
+const TEST_ALG_TO_HASH = {
+  RS256: "RSA-SHA256",
+  RS384: "RSA-SHA384",
+  RS512: "RSA-SHA512"
+};
 
 function b64url(obj) {
   return Buffer.from(JSON.stringify(obj)).toString("base64url");
@@ -33,7 +38,7 @@ function b64url(obj) {
 
 function signJwt(claims, { kid = KID, alg = "RS256" } = {}) {
   const signingInput = `${b64url({ alg, kid, typ: "JWT" })}.${b64url(claims)}`;
-  const signature = crypto.sign("RSA-SHA256", Buffer.from(signingInput), privateKey).toString("base64url");
+  const signature = crypto.sign(TEST_ALG_TO_HASH[alg] ?? "RSA-SHA256", Buffer.from(signingInput), privateKey).toString("base64url");
   return `${signingInput}.${signature}`;
 }
 
@@ -58,6 +63,7 @@ const oidcConfig = {
   oidc: {
     issuer: ISSUER,
     audience: AUDIENCE,
+    allowedAlgorithms: ["RS256"],
     clockToleranceSec: 60
   }
 };
@@ -92,6 +98,21 @@ test("verifyJwt rejects an expired token", () => {
   assert.throws(() => verifyJwt(token, { keys: KEYS, issuer: ISSUER, audience: AUDIENCE, now }), (e) => e instanceof AuthError && e.code === "token_expired");
 });
 
+test("verifyJwt requires a numeric expiration and valid clock settings", () => {
+  assert.throws(
+    () => verifyJwt(signJwt(baseClaims({ exp: undefined })), { keys: KEYS, issuer: ISSUER, audience: AUDIENCE, now }),
+    (e) => e.code === "invalid_expiration"
+  );
+  assert.throws(
+    () => verifyJwt(signJwt(baseClaims({ exp: "never" })), { keys: KEYS, issuer: ISSUER, audience: AUDIENCE, now }),
+    (e) => e.code === "invalid_expiration"
+  );
+  assert.throws(
+    () => verifyJwt(signJwt(baseClaims()), { keys: KEYS, issuer: ISSUER, audience: AUDIENCE, now, clockToleranceSec: Number.NaN }),
+    (e) => e.code === "verification_config"
+  );
+});
+
 test("verifyJwt rejects a tampered payload (bad signature)", () => {
   const token = signJwt(baseClaims());
   const [h, , s] = token.split(".");
@@ -104,14 +125,68 @@ test("verifyJwt rejects wrong audience and wrong issuer", () => {
   assert.throws(() => verifyJwt(signJwt(baseClaims()), { keys: KEYS, issuer: "https://evil/", audience: AUDIENCE, now }), (e) => e.code === "issuer_mismatch");
 });
 
+test("verifyJwt rejects unsigned and non-allowlisted algorithms", () => {
+  const unsigned = `${b64url({ alg: "none", kid: KID })}.${b64url(baseClaims())}.`;
+  assert.throws(
+    () => verifyJwt(unsigned, { keys: KEYS, issuer: ISSUER, audience: AUDIENCE, now }),
+    (e) => e.code === "unsupported_alg"
+  );
+  assert.throws(
+    () => verifyJwt(signJwt(baseClaims(), { alg: "RS512" }), { keys: [{ ...jwk, alg: "RS512" }], issuer: ISSUER, audience: AUDIENCE, now }),
+    (e) => e.code === "disallowed_alg"
+  );
+});
+
 test("verifyJwt rejects an unknown key id", () => {
   const token = signJwt(baseClaims(), { kid: "unknown" });
-  const twoKeys = [jwk, { ...jwk, kid: "other" }];
-  assert.throws(() => verifyJwt(token, { keys: twoKeys, issuer: ISSUER, audience: AUDIENCE, now }), (e) => e.code === "unknown_key");
+  assert.throws(() => verifyJwt(token, { keys: KEYS, issuer: ISSUER, audience: AUDIENCE, now }), (e) => e.code === "unknown_key");
+  const missingKidInput = `${b64url({ alg: "RS256", typ: "JWT" })}.${b64url(baseClaims())}`;
+  const missingKidSignature = crypto.sign("RSA-SHA256", Buffer.from(missingKidInput), privateKey).toString("base64url");
+  const missingKid = `${missingKidInput}.${missingKidSignature}`;
+  assert.throws(
+    () => verifyJwt(missingKid, { keys: KEYS, issuer: ISSUER, audience: AUDIENCE, now }),
+    (e) => e.code === "missing_key_id"
+  );
+});
+
+test("verifyJwt enforces JWKS signing metadata", () => {
+  assert.throws(
+    () => verifyJwt(signJwt(baseClaims()), { keys: [{ ...jwk, use: "enc" }], issuer: ISSUER, audience: AUDIENCE, now }),
+    (e) => e.code === "invalid_key"
+  );
+  assert.throws(
+    () => verifyJwt(signJwt(baseClaims(), { alg: "RS512" }), {
+      keys: KEYS,
+      issuer: ISSUER,
+      audience: AUDIENCE,
+      allowedAlgorithms: ["RS512"],
+      now
+    }),
+    (e) => e.code === "key_alg_mismatch"
+  );
 });
 
 test("verifyJwt rejects a malformed token", () => {
   assert.throws(() => verifyJwt("not-a-jwt", { keys: KEYS, now }), (e) => e.code === "malformed_token");
+  const nonObjectHeader = `${b64url(null)}.${b64url(baseClaims())}.invalid`;
+  assert.throws(
+    () => verifyJwt(nonObjectHeader, { keys: KEYS, issuer: ISSUER, audience: AUDIENCE, now }),
+    (e) => e.code === "malformed_token"
+  );
+});
+
+test("remote JWKS rejects malformed and empty responses", async () => {
+  const malformed = createRemoteJwks({
+    jwksUri: "https://issuer.example.com/.well-known/jwks.json",
+    fetchImpl: async () => ({ ok: true, json: async () => { throw new SyntaxError("bad json"); } })
+  });
+  await assert.rejects(() => malformed.getKeys(), (e) => e.code === "jwks_invalid");
+
+  const empty = createRemoteJwks({
+    jwksUri: "https://issuer.example.com/.well-known/jwks.json",
+    fetchImpl: async () => ({ ok: true, json: async () => ({ keys: [] }) })
+  });
+  await assert.rejects(() => empty.getKeys(), (e) => e.code === "jwks_empty");
 });
 
 // --- principal resolution -----------------------------------------------------
@@ -159,6 +234,17 @@ test("resolveOidcPrincipal rejects identities without an active canonical assign
     }),
     (e) => e.code === "identity_not_provisioned"
   );
+
+  await assert.rejects(
+    () => resolveOidcPrincipal({
+      headers: { authorization: `Bearer ${signJwt(baseClaims())}` },
+      jwks,
+      config: oidcConfig,
+      repository: canonicalAuthorization({ organizationRole: "token-supplied-admin" }),
+      now
+    }),
+    (e) => e.code === "identity_invalid"
+  );
 });
 
 test("resolveOidcPrincipal requires a bearer token", async () => {
@@ -167,6 +253,27 @@ test("resolveOidcPrincipal requires a bearer token", async () => {
     () => resolveOidcPrincipal({ headers: {}, jwks, config: oidcConfig, repository: canonicalAuthorization(), now }),
     (e) => e.code === "missing_token"
   );
+});
+
+test("query-string identity is restricted to the SSE auth path", async () => {
+  const searchParams = new URLSearchParams({ access_token: signJwt(baseClaims()) });
+  const input = {
+    searchParams,
+    jwks: createStaticJwks(KEYS),
+    config: oidcConfig,
+    repository: canonicalAuthorization(),
+    now
+  };
+
+  await assert.rejects(() => resolvePrincipal(input), (e) => e.code === "missing_token");
+  const principal = await resolvePrincipal({ ...input, allowQueryAuth: true });
+  assert.equal(principal.tenantId, "tenant-canonical");
+
+  const stagedWithoutSse = await resolvePrincipal({
+    config: { mode: "staged" },
+    searchParams: new URLSearchParams({ stagedTenantId: "tenant-query" })
+  });
+  assert.equal(stagedWithoutSse.tenantId, null);
 });
 
 test("OIDC startup requires the canonical Postgres repository", () => {
@@ -180,6 +287,76 @@ test("OIDC startup requires the canonical Postgres repository", () => {
     (error) => error instanceof AuthError && error.code === "unsafe_config"
   );
   assert.doesNotThrow(() => assertAuthConfig(config, { repositoryMode: "postgres" }));
+});
+
+test("production auth configuration fails closed", () => {
+  const stagedProduction = loadAuthConfig({ NODE_ENV: "production" });
+  assert.throws(
+    () => assertAuthConfig(stagedProduction, { repositoryMode: "postgres" }),
+    (error) => error instanceof AuthError && error.code === "unsafe_config"
+  );
+
+  const explicitlyNonStaged = loadAuthConfig({ STAGED_MODE: "false" });
+  assert.throws(
+    () => assertAuthConfig(explicitlyNonStaged, { repositoryMode: "postgres" }),
+    (error) => error.code === "unsafe_config"
+  );
+
+  const insecureIssuer = loadAuthConfig({
+    NODE_ENV: "production",
+    XYGO_AUTH_MODE: "oidc",
+    XYGO_OIDC_ISSUER: "http://issuer.example.com/",
+    XYGO_OIDC_AUDIENCE: AUDIENCE
+  });
+  assert.throws(
+    () => assertAuthConfig(insecureIssuer, { repositoryMode: "postgres" }),
+    (error) => error.code === "unsafe_config"
+  );
+
+  const insecureJwks = loadAuthConfig({
+    NODE_ENV: "production",
+    XYGO_AUTH_MODE: "oidc",
+    XYGO_OIDC_ISSUER: ISSUER,
+    XYGO_OIDC_AUDIENCE: AUDIENCE,
+    XYGO_OIDC_JWKS_URI: "http://keys.example.com/jwks.json"
+  });
+  assert.throws(
+    () => assertAuthConfig(insecureJwks, { repositoryMode: "postgres" }),
+    (error) => error.code === "unsafe_config"
+  );
+
+  const secureProduction = loadAuthConfig({
+    NODE_ENV: "production",
+    STAGED_MODE: "false",
+    XYGO_AUTH_MODE: "oidc",
+    XYGO_OIDC_ISSUER: ISSUER,
+    XYGO_OIDC_AUDIENCE: AUDIENCE
+  });
+  assert.doesNotThrow(() => assertAuthConfig(secureProduction, { repositoryMode: "postgres" }));
+});
+
+test("OIDC startup rejects unsafe verification settings", () => {
+  const invalidClock = loadAuthConfig({
+    XYGO_AUTH_MODE: "oidc",
+    XYGO_OIDC_ISSUER: ISSUER,
+    XYGO_OIDC_AUDIENCE: AUDIENCE,
+    XYGO_OIDC_CLOCK_TOLERANCE_SEC: "not-a-number"
+  });
+  assert.throws(
+    () => assertAuthConfig(invalidClock, { repositoryMode: "postgres" }),
+    (error) => error.code === "config_error"
+  );
+
+  const invalidAlgorithms = loadAuthConfig({
+    XYGO_AUTH_MODE: "oidc",
+    XYGO_OIDC_ISSUER: ISSUER,
+    XYGO_OIDC_AUDIENCE: AUDIENCE,
+    XYGO_OIDC_ALLOWED_ALGORITHMS: "HS256"
+  });
+  assert.throws(
+    () => assertAuthConfig(invalidAlgorithms, { repositoryMode: "postgres" }),
+    (error) => error.code === "config_error"
+  );
 });
 
 test("resolveStagedPrincipal self-asserts tenant and defaults the role", () => {
@@ -283,18 +460,52 @@ test("paid-client staff can capture reports while viewers remain read-only", asy
 });
 
 test("paid-client principals cannot cross tenant boundaries", async () => {
-  const owner = {
-    userId: "owner-1",
-    tenantId: "tenant-residential-sim",
-    organizationRole: "client_owner",
+  for (const organizationRole of ["xygo_admin", "client_owner", "client_staff", "client_viewer"]) {
+    const principal = {
+      userId: `${organizationRole}-1`,
+      tenantId: T,
+      organizationRole,
+      projectRole: null,
+      authenticated: true,
+      staged: false
+    };
+    assert.equal((await request({ method: "GET", path: `/v1/tenants/${T}/projects`, principal })).status, 200);
+    assert.equal((await request({ method: "GET", path: `/v1/tenants/${T}/client-portal`, principal })).status, 200);
+    assert.equal(
+      (await request({ method: "GET", path: "/v1/tenants/tenant-residential-sim/projects", principal })).status,
+      403
+    );
+    assert.equal(
+      (await request({ method: "GET", path: "/v1/tenants/tenant-residential-sim/client-portal", principal })).status,
+      403
+    );
+  }
+});
+
+test("paid-client field report creation requires an in-tenant project", async () => {
+  const staff = {
+    userId: "staff-cross-project",
+    tenantId: T,
+    organizationRole: "client_staff",
     projectRole: null,
     authenticated: true,
     staged: false
   };
-  assert.equal(
-    (await request({ method: "GET", path: `/v1/tenants/${T}/client-portal`, principal: owner })).status,
-    403
-  );
+  const response = await request({
+    method: "POST",
+    path: `/v1/tenants/${T}/field-reports`,
+    principal: staff,
+    body: {
+      id: "fr-cross-project",
+      projectId: "project-residential-a",
+      siteName: "Wrong tenant",
+      reportType: "daily_log",
+      author: staff.userId,
+      observations: []
+    }
+  });
+  assert.equal(response.status, 403);
+  assert.match(response.body.message, /in-tenant project/);
 });
 
 test("RBAC: principal from another tenant is denied (no cross-tenant)", async () => {

@@ -94,4 +94,8 @@ user's provider subject to the secure provisioning input:
 
 The input file remains outside the repository. The issuer must exactly match `XYGO_OIDC_ISSUER` at
 runtime. OIDC mode requires `XYGO_API_REPOSITORY_MODE=postgres`; startup fails closed for file,
-SQLite, or memory repositories. Self-asserted staged headers are not considered in OIDC mode.
+SQLite, or memory repositories. A runtime marked by `NODE_ENV=production` or `STAGED_MODE=false`
+also refuses to start with staged authentication, non-HTTPS issuer/JWKS URLs, invalid clock
+tolerance, or an unsupported signing-algorithm allowlist. `RS256` is the default allowed algorithm.
+Self-asserted staged headers are not considered in OIDC mode, and query-string authentication is
+limited to the tenant SSE transport that cannot set an authorization header.

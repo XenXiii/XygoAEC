@@ -1,5 +1,7 @@
 import { AuthError, verifyJwt } from "./jwt.js";
 
+const PAID_CLIENT_ROLES = new Set(["xygo_admin", "client_owner", "client_staff", "client_viewer"]);
+
 // A Principal is the validated (or, in staged mode, self-asserted) identity used
 // for every authorization decision downstream:
 //   { userId, tenantId, organizationRole, projectRole, authenticated, staged }
@@ -26,13 +28,13 @@ export function resolveStagedPrincipal({ headers = {}, searchParams = null } = {
   };
 }
 
-function extractBearer(headers = {}, searchParams = null) {
+function extractBearer(headers = {}, searchParams = null, allowQueryAuth = false) {
   const header = headers.authorization ?? headers.Authorization ?? null;
   if (header && /^Bearer\s+/i.test(header)) {
     return header.replace(/^Bearer\s+/i, "").trim();
   }
   // EventSource cannot set headers; allow the token via query for the SSE stream.
-  if (searchParams) {
+  if (allowQueryAuth && searchParams) {
     return searchParams.get("access_token");
   }
   return null;
@@ -47,9 +49,10 @@ export async function resolveOidcPrincipal({
   jwks,
   config,
   repository,
+  allowQueryAuth = false,
   now = Date.now()
 }) {
-  const token = extractBearer(headers, searchParams);
+  const token = extractBearer(headers, searchParams, allowQueryAuth);
   if (!token) {
     throw new AuthError("missing_token", "Authorization bearer token is required.");
   }
@@ -59,6 +62,7 @@ export async function resolveOidcPrincipal({
     keys,
     issuer: config.oidc.issuer,
     audience: config.oidc.audience,
+    allowedAlgorithms: config.oidc.allowedAlgorithms,
     now,
     clockToleranceSec: config.oidc.clockToleranceSec
   });
@@ -83,6 +87,13 @@ export async function resolveOidcPrincipal({
   if (authorization?.status !== "active") {
     throw new AuthError("identity_not_provisioned", "OIDC identity is not active in the canonical repository.");
   }
+  if (
+    typeof authorization.userId !== "string" || !authorization.userId ||
+    typeof authorization.tenantId !== "string" || !authorization.tenantId ||
+    !PAID_CLIENT_ROLES.has(authorization.organizationRole)
+  ) {
+    throw new AuthError("identity_invalid", "OIDC identity has an invalid canonical authorization assignment.");
+  }
 
   return {
     userId: authorization.userId,
@@ -101,10 +112,11 @@ export async function resolvePrincipal({
   config,
   jwks,
   repository,
+  allowQueryAuth = false,
   now = Date.now()
 }) {
   if (config.mode === "oidc") {
-    return resolveOidcPrincipal({ headers, searchParams, jwks, config, repository, now });
+    return resolveOidcPrincipal({ headers, searchParams, jwks, config, repository, allowQueryAuth, now });
   }
-  return resolveStagedPrincipal({ headers, searchParams });
+  return resolveStagedPrincipal({ headers, searchParams: allowQueryAuth ? searchParams : null });
 }

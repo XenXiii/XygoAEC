@@ -31,7 +31,12 @@ export function createRemoteJwks({ jwksUri, fetchImpl = fetch, cacheTtlMs = 10 *
       throw new AuthError("jwks_unavailable", `JWKS endpoint returned ${response.status}.`);
     }
 
-    const body = await response.json();
+    let body;
+    try {
+      body = await response.json();
+    } catch {
+      throw new AuthError("jwks_invalid", "JWKS endpoint did not return valid JSON.");
+    }
     const keys = Array.isArray(body?.keys) ? body.keys : [];
     if (keys.length === 0) {
       throw new AuthError("jwks_empty", "JWKS endpoint returned no keys.");

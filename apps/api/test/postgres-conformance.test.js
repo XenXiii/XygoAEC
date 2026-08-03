@@ -54,6 +54,7 @@ const oidcConfig = {
   oidc: {
     issuer: OIDC_ISSUER,
     audience: OIDC_AUDIENCE,
+    allowedAlgorithms: ["RS256"],
     clockToleranceSec: 60
   }
 };
@@ -223,6 +224,10 @@ test("verified OIDC identity resolves tenant and role from canonical Postgres re
   const identities = await repo.listOidcIdentitiesByTenant(tenantId);
   assert.equal(identities.length, 1);
   assert.equal(identities[0].subject, subject);
+  assert.deepEqual(
+    await repo.resolveOidcAuthorization({ issuer: "https://wrong-issuer.postgres.test/", subject }),
+    { status: "not_found" }
+  );
 
   const principal = await resolveOidcPrincipal({
     headers: { authorization: `Bearer ${signOidcToken(subject)}` },
@@ -255,6 +260,23 @@ test("verified OIDC identity resolves tenant and role from canonical Postgres re
   });
   assert.equal(crossTenant.status, 403);
 
+  const crossTenantProject = await handleApiRequest({
+    method: "POST",
+    path: `/v1/tenants/${tenantId}/field-reports`,
+    body: JSON.stringify({
+      id: `${tenantId}-cross-project-report`,
+      projectId: "project-residential-a",
+      siteName: "Cross-tenant project",
+      reportType: "daily_log",
+      author: principal.userId,
+      observations: []
+    }),
+    repository: repo,
+    principal,
+    authConfig: oidcConfig
+  });
+  assert.equal(crossTenantProject.status, 403);
+
   await assert.rejects(
     () => resolveOidcPrincipal({
       headers: { authorization: `Bearer ${signOidcToken("unprovisioned-subject")}` },
@@ -281,6 +303,33 @@ test("verified OIDC identity resolves tenant and role from canonical Postgres re
     (error) => error.code === "23505"
   );
   assert.equal(await repo.getTenantById(`tenant-${conflictingSlug}`), null);
+
+  const pg = (await import("pg")).default;
+  const statusPool = new pg.Pool({ connectionString: PG_URL });
+  t.after(() => statusPool.end());
+  await statusPool.query("UPDATE users SET status = 'inactive' WHERE id = $1", [`${tenantId}-user-1`]);
+  await assert.rejects(
+    () => resolveOidcPrincipal({
+      headers: { authorization: `Bearer ${signOidcToken(subject)}` },
+      jwks: createStaticJwks([oidcJwk]),
+      config: oidcConfig,
+      repository: repo,
+      now: OIDC_NOW_SEC * 1000
+    }),
+    (error) => error.code === "identity_not_provisioned"
+  );
+  await statusPool.query("UPDATE users SET status = 'active' WHERE id = $1", [`${tenantId}-user-1`]);
+  await statusPool.query("UPDATE tenants SET status = 'inactive' WHERE id = $1", [tenantId]);
+  await assert.rejects(
+    () => resolveOidcPrincipal({
+      headers: { authorization: `Bearer ${signOidcToken(subject)}` },
+      jwks: createStaticJwks([oidcJwk]),
+      config: oidcConfig,
+      repository: repo,
+      now: OIDC_NOW_SEC * 1000
+    }),
+    (error) => error.code === "identity_not_provisioned"
+  );
 });
 
 test("postgres provisioning and portal branding/updates remain tenant-scoped", { skip }, async (t) => {

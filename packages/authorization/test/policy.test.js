@@ -66,14 +66,33 @@ test("paid-client roles enforce owner, staff, and viewer permissions", () => {
   });
 
   assert.equal(decision("xygo_admin", "field_report", "update").allowed, true);
+  assert.equal(decision("xygo_admin", "project", "create").allowed, true);
+  assert.equal(decision("xygo_admin", "client_portal", "read").allowed, true);
   assert.equal(decision("client_owner", "field_report", "update").allowed, true);
+  assert.equal(decision("client_owner", "project", "create").allowed, true);
+  assert.equal(decision("client_owner", "client_portal", "read").allowed, true);
   assert.equal(decision("client_staff", "field_report", "create").allowed, true);
+  assert.equal(decision("client_staff", "field_report", "update").allowed, true);
   assert.equal(decision("client_staff", "client_portal", "read").allowed, true);
+  assert.equal(decision("client_staff", "project", "create").allowed, false);
   assert.equal(decision("client_staff", "coordination_issue", "create").allowed, false);
   assert.equal(decision("client_viewer", "project", "read").allowed, true);
   assert.equal(decision("client_viewer", "client_portal", "read").allowed, true);
   assert.equal(decision("client_viewer", "field_report", "read").allowed, false);
+  assert.equal(decision("client_viewer", "field_report", "create").allowed, false);
   assert.equal(decision("client_viewer", "field_report", "update").allowed, false);
+
+  for (const organizationRole of ["xygo_admin", "client_owner", "client_staff", "client_viewer"]) {
+    const crossTenant = canPerform({
+      tenantId: "tenant-a",
+      resourceTenantId: "tenant-b",
+      organizationRole,
+      resource: "client_portal",
+      action: "read"
+    });
+    assert.equal(crossTenant.allowed, false);
+    assert.equal(crossTenant.reason, "tenant_mismatch");
+  }
 });
 
 test("permission matrix is machine-readable", () => {
