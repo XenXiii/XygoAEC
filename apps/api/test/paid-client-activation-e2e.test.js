@@ -204,7 +204,10 @@ test("paid-client activation works end to end through OIDC, HTTP, and canonical 
   assert.equal(fieldReport.status, 201);
   assert.equal(fieldReport.body.item.tenantId, alphaTenantId);
 
-  const viewerToken = signToken(alphaSubjects.viewer);
+  const viewerToken = signToken(alphaSubjects.viewer, {
+    org_id: betaTenantId,
+    "https://xygo/org_role": "xygo_admin"
+  });
   const viewerWrite = await request(`/v1/tenants/${alphaTenantId}/field-reports`, {
     method: "POST",
     token: viewerToken,
