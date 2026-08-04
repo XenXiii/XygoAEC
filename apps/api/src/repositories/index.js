@@ -32,7 +32,10 @@ export function createRepositoryFromEnv(env = process.env) {
   }
 
   if (mode === "postgres") {
-    return createPostgresRepository({ connectionString: env.XYGO_API_PG_URL });
+    return createPostgresRepository({
+      connectionString: env.XYGO_API_PG_URL,
+      auditSigningKey: env.XYGO_AUDIT_SIGNING_KEY ?? null
+    });
   }
 
   throw new Error(`Unknown repository mode: ${mode}`);

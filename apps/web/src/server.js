@@ -3,6 +3,7 @@ import http from "node:http";
 import path from "node:path";
 
 import { assertWebRuntimeConfig, loadWebRuntimeConfig, publicWebRuntimeConfig } from "./runtime-config.js";
+import { assertProductionWebEnvironment } from "../../../packages/production-config/src/index.js";
 
 const appRoot = path.resolve(process.cwd(), "apps/web");
 const publicDir = path.join(appRoot, "public");
@@ -45,6 +46,7 @@ function resolveFile(urlPath) {
 }
 
 export function createWebServer({ env = process.env } = {}) {
+  assertProductionWebEnvironment(env);
   const runtimeConfig = assertWebRuntimeConfig(loadWebRuntimeConfig(env), env);
 
   return http.createServer((req, res) => {

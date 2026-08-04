@@ -3,10 +3,13 @@ import assert from "node:assert/strict";
 
 import { createWebServer } from "../src/server.js";
 import { assertWebRuntimeConfig, loadWebRuntimeConfig, publicWebRuntimeConfig } from "../src/runtime-config.js";
+import { PRIVATE_PRODUCTION_ENV_VARS } from "../../../packages/production-config/src/index.js";
 
 const productionEnv = {
   NODE_ENV: "production",
   STAGED_MODE: "false",
+  XYGO_DEPLOY_ENVIRONMENT: "production",
+  XYGO_RELEASE: "0123456789abcdef",
   XYGO_AUTH_MODE: "oidc",
   XYGO_OIDC_PROVIDER: "auth0",
   XYGO_OIDC_ISSUER: "https://tenant.example-idp.com/",
@@ -16,13 +19,15 @@ const productionEnv = {
   XYGO_WEB_OIDC_CLIENT_ID: "public-client-id",
   XYGO_WEB_OIDC_AUTHORIZATION_ENDPOINT: "https://tenant.example-idp.com/authorize",
   XYGO_WEB_OIDC_TOKEN_ENDPOINT: "https://tenant.example-idp.com/oauth/token",
-  XYGO_WEB_OIDC_END_SESSION_ENDPOINT: "https://tenant.example-idp.com/logout"
+  XYGO_WEB_OIDC_END_SESSION_ENDPOINT: "https://tenant.example-idp.com/logout",
+  XYGO_WEB_OIDC_SCOPES: "openid profile email",
+  XYGO_WEB_MONITORING_ENDPOINT: "https://browser-monitoring.xygo.example/events"
 };
 
 test("production web startup fails closed without managed OIDC configuration", () => {
   assert.throws(
     () => createWebServer({ env: { NODE_ENV: "production" } }),
-    /requires XYGO_AUTH_MODE=oidc/
+    /Production web configuration error/
   );
   assert.throws(
     () => createWebServer({ env: { ...productionEnv, XYGO_WEB_OIDC_TOKEN_ENDPOINT: undefined } }),
@@ -50,16 +55,18 @@ test("public runtime config fixes browser auth to code plus PKCE and memory toke
   assert.equal(publicConfig.auth.pkceMethod, "S256");
   assert.equal(publicConfig.auth.accessTokenStorage, "memory");
   assert.equal(publicConfig.auth.redirectUri, "https://app.xygo.example/auth/callback");
+  assert.equal(publicConfig.environment, "production");
+  assert.equal(publicConfig.release, "0123456789abcdef");
+  assert.equal(publicConfig.monitoring.endpoint, "https://browser-monitoring.xygo.example/events");
   assert.ok(publicConfig.auth.scopes.includes("openid"));
   assert.equal("clientSecret" in publicConfig.auth, false);
   assert.equal("internalSecret" in publicConfig.auth, false);
 });
 
 test("web server exposes only the non-secret managed IdP runtime manifest", () => {
-  const secretValues = {
-    XYGO_API_PG_URL: "postgres://user:database-secret@db.example/xygo",
-    XYGO_AUDIT_SIGNING_KEY: "audit-signing-secret"
-  };
+  const secretValues = Object.fromEntries(
+    PRIVATE_PRODUCTION_ENV_VARS.map((name, index) => [name, `private-sentinel-${index}-must-not-be-public`])
+  );
   const server = createWebServer({ env: { ...productionEnv, ...secretValues } });
   let status;
   let headers;
@@ -78,6 +85,8 @@ test("web server exposes only the non-secret managed IdP runtime manifest", () =
   const body = JSON.parse(responseBody);
   assert.equal(body.auth.provider, "auth0");
   assert.equal(body.apiBaseUrl, "https://api.xygo.example");
-  assert.equal(JSON.stringify(body).includes("database-secret"), false);
-  assert.equal(JSON.stringify(body).includes("audit-signing-secret"), false);
+  const serialized = JSON.stringify(body);
+  for (const secret of Object.values(secretValues)) {
+    assert.equal(serialized.includes(secret), false);
+  }
 });

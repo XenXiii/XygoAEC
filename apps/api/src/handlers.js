@@ -38,10 +38,6 @@ async function withIdempotency({ idempotency, clientKey, tenantId, path, compute
 
 const defaultRepository = createRepositoryFromEnv();
 
-// When set (production), audit events are HMAC-signed → tamper-proof. When unset
-// (staged), the chain remains tamper-evident only. See docs/security.
-const auditSigningKey = process.env.XYGO_AUDIT_SIGNING_KEY ?? null;
-
 function json(status, body) {
   return {
     status,
@@ -236,7 +232,8 @@ async function appendTenantAuditEvent({
   resourceType,
   resourceId,
   beforeStateRef = null,
-  afterStateRef = null
+  afterStateRef = null,
+  signingKey = null
 }) {
   const existingEvents = await repository.listAuditEventsByTenant(tenantId);
   const previousHash = existingEvents.length > 0 ? existingEvents[existingEvents.length - 1].eventHash : null;
@@ -251,7 +248,7 @@ async function appendTenantAuditEvent({
     beforeStateRef,
     afterStateRef,
     previousHash,
-    signingKey: auditSigningKey
+    signingKey
   });
 
   await repository.appendAuditEvent(event);
@@ -544,7 +541,7 @@ function ensureObjectBody(parsed) {
   return null;
 }
 
-async function handleCollectionCreate({ resource, body, tenantId, actorId, repository, outbox }) {
+async function handleCollectionCreate({ resource, body, tenantId, actorId, repository, outbox, auditSigningKey }) {
   const parsed = parseBody(body);
 
   const bodyShapeError = ensureObjectBody(parsed);
@@ -572,7 +569,8 @@ async function handleCollectionCreate({ resource, body, tenantId, actorId, repos
       action: resource.audit.action,
       resourceType: resource.audit.resourceType,
       resourceId: created.id,
-      afterStateRef: resource.audit.afterStateRef(created)
+      afterStateRef: resource.audit.afterStateRef(created),
+      signingKey: auditSigningKey
     });
 
     // Enqueue a durable domain event for async processing (worker drains it).
@@ -619,7 +617,8 @@ async function routeApiRequest({
   principal = null,
   authConfig = { mode: "staged" },
   outbox = sharedOutbox,
-  idempotency = sharedIdempotency
+  idempotency = sharedIdempotency,
+  auditSigningKey = process.env.XYGO_AUDIT_SIGNING_KEY ?? null
 }) {
   if (!["GET", "POST"].includes(method)) {
     return json(405, {
@@ -691,7 +690,8 @@ async function routeApiRequest({
               tenantId,
               actorId: effectivePrincipal.userId,
               repository,
-              outbox
+              outbox,
+              auditSigningKey
             })
         });
       }
@@ -750,7 +750,8 @@ async function routeApiRequest({
         resourceType: "field_report",
         resourceId: drafted.id,
         beforeStateRef: report.status,
-        afterStateRef: drafted.status
+        afterStateRef: drafted.status,
+        signingKey: auditSigningKey
       });
       return json(200, { item: drafted, staged: true });
     } catch (error) {
@@ -793,7 +794,8 @@ async function routeApiRequest({
         resourceType: "field_report",
         resourceId: reviewed.id,
         beforeStateRef: report.status,
-        afterStateRef: reviewed.status
+        afterStateRef: reviewed.status,
+        signingKey: auditSigningKey
       });
       return json(200, { item: reviewed, staged: true });
     } catch (error) {
@@ -856,7 +858,8 @@ async function routeApiRequest({
         resourceType: "ai_finding",
         resourceId: updated.id,
         beforeStateRef: finding.humanDisposition,
-        afterStateRef: updated.humanDisposition
+        afterStateRef: updated.humanDisposition,
+        signingKey: auditSigningKey
       });
 
       return json(200, {

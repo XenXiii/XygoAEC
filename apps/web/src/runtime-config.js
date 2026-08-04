@@ -39,8 +39,13 @@ export function loadWebRuntimeConfig(env = process.env) {
 
   const config = {
     productionMode,
+    environment: normalizedString(env.XYGO_DEPLOY_ENVIRONMENT) ?? "local",
+    release: normalizedString(env.XYGO_RELEASE) ?? "development",
     appUrl,
     apiBaseUrl,
+    monitoring: {
+      endpoint: normalizedString(env.XYGO_WEB_MONITORING_ENDPOINT)
+    },
     auth: { mode }
   };
 
@@ -118,8 +123,13 @@ export function assertWebRuntimeConfig(config, env = process.env) {
 
 export function publicWebRuntimeConfig(config) {
   return {
+    environment: config.environment,
+    release: config.release,
     appUrl: config.appUrl,
     apiBaseUrl: config.apiBaseUrl,
+    monitoring: {
+      endpoint: config.monitoring.endpoint
+    },
     auth: config.auth.mode === "staged" ? { mode: "staged" } : {
       mode: config.auth.mode,
       provider: config.auth.provider,

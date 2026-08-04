@@ -20,10 +20,11 @@ browser URLs exactly:
 - post-logout: `<XYGO_WEB_APP_URL>/`
 - allowed web origin: `XYGO_WEB_APP_URL`
 
-Start from [`config/managed-idp.env.example`](../../config/managed-idp.env.example). Real values belong
-in the approved environment or secret store. `XYGO_OIDC_PROVIDER` is descriptive but mandatory in
-production; supported values are `auth0`, `clerk`, `cognito`, `entra`, `okta`, and
-`other-managed-oidc`.
+Use [`config/managed-idp.env.example`](../../config/managed-idp.env.example) as the provider-specific
+reference fragment. A complete production environment starts from
+[`config/production.env.example`](../../config/production.env.example); real values belong in the
+approved environment or secret store. `XYGO_OIDC_PROVIDER` is descriptive but mandatory in production;
+supported values are `auth0`, `clerk`, `cognito`, `entra`, `okta`, and `other-managed-oidc`.
 
 The API validates bearer tokens against the exact issuer, audience, explicit JWKS endpoint, and RSA
 algorithm allowlist. The provider token's tenant or role claims are never authorization inputs.
@@ -74,6 +75,10 @@ The production web runtime independently refuses to start unless the app URL, AP
 ID, issuer/audience, and provider authorization/token/logout endpoints are complete and HTTPS. It
 also rejects `XYGO_WEB_OIDC_CLIENT_SECRET`. `/runtime-config.json` exposes only non-secret public
 client configuration and is served with `Cache-Control: no-store`.
+
+The complete API/web/worker variable lists and additional Postgres, audit, email, storage, outbox, and
+monitoring gates are defined in the
+[`Production Environment And Secrets Gate`](../operations/production-environment-gate.md).
 
 ## Browser token lifecycle contract
 
