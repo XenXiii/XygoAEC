@@ -258,7 +258,7 @@ test("email provider and monitoring settings fail closed in production", () => {
   ]) {
     assert.throws(
       () => assertProductionWorkerEnvironment(validProductionEnvironment({ [name]: value })),
-      new RegExp(name)
+      (error) => error instanceof Error && error.message.includes(name)
     );
   }
   assert.throws(
