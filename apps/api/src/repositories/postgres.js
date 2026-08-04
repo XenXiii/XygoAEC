@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 import { createProject } from "../../../../packages/shared-contracts/src/foundation.js";
 import { createCoordinationIssue, createRfi } from "../../../../packages/coordination/src/index.js";
@@ -77,13 +78,15 @@ export function createPostgresRepository({
   poolOptions = {},
   seedSyntheticData = false,
   beforeProvisioningCommit = null,
-  beforeOidcBindingCommit = null
+  beforeOidcBindingCommit = null,
+  beforeOutboxCommit = null
 }) {
   if (!connectionString) {
     throw new Error("connectionString is required for postgres repository.");
   }
 
   let poolPromise = null;
+  const transactionContext = new AsyncLocalStorage();
 
   async function pool() {
     if (!poolPromise) {
@@ -104,8 +107,51 @@ export function createPostgresRepository({
   }
 
   async function query(text, params = []) {
+    const transactionClient = transactionContext.getStore();
+    if (transactionClient) return transactionClient.query(text, params);
     const p = await pool();
     return p.query(text, params);
+  }
+
+  async function enqueueOutboxEvent(event, { idempotencyKey }) {
+    const createdAt = new Date().toISOString();
+    const inserted = await query(
+      "INSERT INTO outbox_jobs " +
+        "(id, tenant_id, event_type, event_version, aggregate_type, aggregate_id, idempotency_key, status, attempts, next_attempt_at, payload, created_at, updated_at) " +
+        "VALUES ($1,$2,$3,$4,$5,$6,$7,'pending',0,$8,$9,$8,$8) " +
+        "ON CONFLICT (idempotency_key) DO NOTHING RETURNING payload, tenant_id, event_type, event_version, aggregate_type, aggregate_id",
+      [
+        event.id,
+        event.tenantId ?? null,
+        event.eventType,
+        event.eventVersion ?? 1,
+        event.aggregateType,
+        event.aggregateId,
+        idempotencyKey,
+        createdAt,
+        event
+      ]
+    );
+    if (inserted.rows[0]) {
+      if (beforeOutboxCommit) await beforeOutboxCommit({ event, idempotencyKey });
+      return inserted.rows[0].payload;
+    }
+    const existing = await query(
+      "SELECT payload, tenant_id, event_type, event_version, aggregate_type, aggregate_id FROM outbox_jobs WHERE idempotency_key = $1",
+      [idempotencyKey]
+    );
+    const row = existing.rows[0];
+    if (!row) return null;
+    if (
+      row.tenant_id !== (event.tenantId ?? null) || row.event_type !== event.eventType ||
+      row.event_version !== (event.eventVersion ?? 1) || row.aggregate_type !== event.aggregateType ||
+      row.aggregate_id !== event.aggregateId
+    ) {
+      const error = new Error("Outbox idempotency key is already bound to a different logical event.");
+      error.code = "outbox_idempotency_conflict";
+      throw error;
+    }
+    return row.payload;
   }
 
   async function seed(p) {
@@ -205,6 +251,12 @@ export function createPostgresRepository({
   }
 
   return {
+    supportsTransactionalOutbox: true,
+    async runTransaction(operation) {
+      const p = await pool();
+      return runPostgresTransaction(p, (client) => transactionContext.run(client, operation));
+    },
+    enqueueOutboxEvent,
     async checkReadiness() {
       return checkPostgresReadiness(await pool());
     },
@@ -690,7 +742,7 @@ export function createPostgresRepository({
       if (result.rowCount !== 1) throw new Error("File record not found.");
       return fileRecord;
     },
-    async finalizeFileRecord({ fileRecord, auditEvent }) {
+    async finalizeFileRecord({ fileRecord, auditEvent, outboxEvent = null, outboxIdempotencyKey = null }) {
       const p = await pool();
       return runPostgresTransaction(p, async (client) => {
         const result = await client.query(
@@ -728,6 +780,11 @@ export function createPostgresRepository({
             auditEvent
           ]
         );
+        if (outboxEvent) {
+          await transactionContext.run(client, () => enqueueOutboxEvent(outboxEvent, {
+            idempotencyKey: outboxIdempotencyKey
+          }));
+        }
         return fileRecord;
       });
     },

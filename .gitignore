@@ -4,6 +4,9 @@ node_modules/
 # Staged runtime data stores (regenerated from seed at runtime)
 infrastructure/staged-data/api-store.json
 infrastructure/staged-data/api-store.sqlite
+infrastructure/staged-data/outbox.sqlite
+infrastructure/staged-data/outbox.sqlite-shm
+infrastructure/staged-data/outbox.sqlite-wal
 infrastructure/staged-data/*.tmp
 infrastructure/staged-data/uploads/
 

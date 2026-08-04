@@ -6,7 +6,12 @@ import { createStaticJwks } from "../src/auth/jwks.js";
 import { resolveOidcPrincipal } from "../src/auth/principal.js";
 import { handleApiRequest } from "../src/handlers.js";
 import { createPostgresRepository } from "../src/repositories/postgres.js";
-import { createAuditEvent } from "../../../packages/audit/src/foundation.js";
+import { createAuditEvent, createOutboxEvent } from "../../../packages/audit/src/foundation.js";
+import {
+  createPostgresOutboxStore,
+  enqueueOutboxEvent,
+  processOutboxOnce
+} from "../src/reliability/outbox.js";
 import {
   applyPostgresMigrations,
   checkPostgresReadiness
@@ -73,6 +78,7 @@ test("postgres schema contains every canonical provisioning table", { skip }, as
     "business_profiles",
     "file_records",
     "oidc_identities",
+    "outbox_jobs",
     "platform_blueprints",
     "portal_configurations",
     "portal_data",
@@ -94,7 +100,8 @@ test("postgres schema contains every canonical provisioning table", { skip }, as
     "0001_init",
     "0002_paid_client_provisioning",
     "0003_oidc_authorization",
-    "0004_tenant_file_storage"
+    "0004_tenant_file_storage",
+    "0005_durable_outbox"
   ]);
 });
 
@@ -109,7 +116,8 @@ test("postgres readiness verifies connectivity and the complete migration chain"
     "0001_init",
     "0002_paid_client_provisioning",
     "0003_oidc_authorization",
-    "0004_tenant_file_storage"
+    "0004_tenant_file_storage",
+    "0005_durable_outbox"
   ]);
 });
 
@@ -144,7 +152,7 @@ test("postgres repository refuses an unmigrated schema without changing it", { s
 
   await assert.rejects(
     () => repository.checkReadiness(),
-    (error) => error.code === "postgres_schema_not_current" && error.migrationStatus.pending.length === 4
+    (error) => error.code === "postgres_schema_not_current" && error.migrationStatus.pending.length === 5
   );
   const tables = await adminPool.query(
     "SELECT table_name FROM information_schema.tables WHERE table_schema = $1",
@@ -226,9 +234,146 @@ test("postgres backend satisfies the repository contract", { skip }, async (t) =
   assert.deepEqual(ids.slice(-2), ["audit-pg-1", "audit-pg-2"]);
 });
 
+test("postgres outbox is durable, safely claimed, tenant-scoped, idempotent, and replayable", { skip }, async (t) => {
+  const pg = (await import("pg")).default;
+  const cleanupPool = new pg.Pool({ connectionString: PG_URL });
+  await cleanupPool.query(
+    "INSERT INTO tenants (id, name) VALUES ($1,$1),($2,$2) ON CONFLICT (id) DO NOTHING",
+    [TENANT_A, TENANT_B]
+  );
+  await cleanupPool.query("DELETE FROM outbox_jobs");
+  const storeA = createPostgresOutboxStore({ connectionString: PG_URL, poolOptions: { max: 2 } });
+  const storeB = createPostgresOutboxStore({ connectionString: PG_URL, poolOptions: { max: 2 } });
+  t.after(async () => {
+    await Promise.all([storeA.close(), storeB.close()]);
+    await cleanupPool.end();
+  });
+  const job = (id, tenantId = TENANT_A) => createOutboxEvent({
+    id,
+    tenantId,
+    eventType: "report.delivery.requested",
+    aggregateType: "field_report",
+    aggregateId: `report-${id}`,
+    payload: { reportId: `report-${id}` },
+    occurredAt: "2026-08-04T00:00:00.000Z"
+  });
+
+  const first = await enqueueOutboxEvent(storeA, job("pg-job-a"), {
+    idempotencyKey: "tenant-a:report:one",
+    now: 0
+  });
+  const duplicate = await enqueueOutboxEvent(storeB, { ...job("pg-job-a"), id: "pg-job-duplicate" }, {
+    idempotencyKey: "tenant-a:report:one",
+    now: 1
+  });
+  await enqueueOutboxEvent(storeA, job("pg-job-b", TENANT_B), { now: 0 });
+  assert.equal(duplicate.id, first.id);
+  assert.deepEqual((await storeA.list({ tenantId: TENANT_A })).map((item) => item.id), ["pg-job-a"]);
+  assert.deepEqual((await storeA.list({ tenantId: TENANT_B })).map((item) => item.id), ["pg-job-b"]);
+
+  const [claimedA, claimedB] = await Promise.all([
+    storeA.claim({ workerId: "pg-worker-a", now: 0, limit: 1, staleAfterMs: 1000 }),
+    storeB.claim({ workerId: "pg-worker-b", now: 0, limit: 1, staleAfterMs: 1000 })
+  ]);
+  const claimed = [...claimedA, ...claimedB];
+  assert.equal(claimed.length, 2);
+  assert.equal(new Set(claimed.map((item) => item.id)).size, 2);
+  await Promise.all(claimed.map((item) =>
+    (item.lockedBy === "pg-worker-a" ? storeA : storeB).complete({
+      id: item.id,
+      workerId: item.lockedBy,
+      now: 1
+    })
+  ));
+
+  await enqueueOutboxEvent(storeA, job("pg-job-retry"), { now: 0 });
+  const failing = async () => { throw new Error("downstream unavailable"); };
+  const firstFailure = await processOutboxOnce({
+    store: storeA,
+    handler: failing,
+    workerId: "pg-worker-retry-a",
+    now: 0,
+    maxAttempts: 2,
+    baseBackoffMs: 1000,
+    maxBackoffMs: 1000
+  });
+  assert.equal(firstFailure.retried, 1);
+  const finalFailure = await processOutboxOnce({
+    store: storeB,
+    handler: failing,
+    workerId: "pg-worker-retry-b",
+    now: 1000,
+    maxAttempts: 2,
+    baseBackoffMs: 1000,
+    maxBackoffMs: 1000
+  });
+  assert.equal(finalFailure.dead, 1);
+  await assert.rejects(() => storeA.checkReadiness({ maxDeadJobs: 0, requireHealthy: true }), /Outbox is unhealthy/);
+  assert.equal(await storeA.replay({
+    id: "pg-job-retry",
+    tenantId: TENANT_B,
+    reason: "wrong tenant"
+  }), null);
+  const replayed = await storeA.replay({
+    id: "pg-job-retry",
+    tenantId: TENANT_A,
+    reason: "dependency recovered",
+    now: 2000
+  });
+  assert.equal(replayed.status, "pending");
+  assert.equal(replayed.replayCount, 1);
+  assert.equal(replayed.lastReplayReason, "dependency recovered");
+});
+
+test("postgres application writes, audit evidence, and outbox enqueue commit or roll back together", { skip }, async (t) => {
+  const suffix = `${process.pid}-${Date.now()}`;
+  const projectId = `project-outbox-atomic-${suffix}`;
+  const repository = createPostgresRepository({ connectionString: PG_URL, seedSyntheticData: true });
+  const outbox = createPostgresOutboxStore({ connectionString: PG_URL });
+  const rollbackRepository = createPostgresRepository({
+    connectionString: PG_URL,
+    beforeOutboxCommit: async () => { throw new Error("simulated outbox transaction failure"); }
+  });
+  t.after(async () => Promise.all([repository.close(), rollbackRepository.close(), outbox.close()]));
+
+  const response = await handleApiRequest({
+    method: "POST",
+    path: `/v1/tenants/${TENANT_A}/projects`,
+    headers: { "x-staged-tenant-id": TENANT_A },
+    repository,
+    body: JSON.stringify({ id: projectId, name: "Atomic outbox project", projectType: "commercial" })
+  });
+  assert.equal(response.status, 201);
+  assert.equal((await repository.getProjectById(projectId)).id, projectId);
+  assert.ok((await repository.listAuditEventsByTenant(TENANT_A)).some(
+    (event) => event.resourceId === projectId && event.action === "api.project.created"
+  ));
+  assert.ok((await outbox.list({ tenantId: TENANT_A })).some(
+    (job) => job.event.aggregateId === projectId && job.event.eventType === "api.project.created"
+  ));
+
+  const rollbackProjectId = `${projectId}-rollback`;
+  const rolledBack = await handleApiRequest({
+    method: "POST",
+    path: `/v1/tenants/${TENANT_A}/projects`,
+    headers: { "x-staged-tenant-id": TENANT_A },
+    repository: rollbackRepository,
+    body: JSON.stringify({ id: rollbackProjectId, name: "Rollback outbox project", projectType: "commercial" })
+  });
+  assert.equal(rolledBack.status, 400);
+  assert.equal(await repository.getProjectById(rollbackProjectId), null);
+  assert.ok(!(await repository.listAuditEventsByTenant(TENANT_A)).some(
+    (event) => event.resourceId === rollbackProjectId
+  ));
+  assert.ok(!(await outbox.list({ tenantId: TENANT_A })).some(
+    (job) => job.event.aggregateId === rollbackProjectId
+  ));
+});
+
 test("postgres persists tenant-scoped file metadata and atomically links upload audit evidence", { skip }, async (t) => {
   const repo = createPostgresRepository({ connectionString: PG_URL, seedSyntheticData: true });
-  t.after(() => repo.close());
+  const outbox = createPostgresOutboxStore({ connectionString: PG_URL });
+  t.after(() => Promise.all([repo.close(), outbox.close()]));
   const suffix = `${process.pid}-${Date.now()}`;
   const pending = {
     id: `file-pg-${suffix}`,
@@ -263,10 +408,25 @@ test("postgres persists tenant-scoped file metadata and atomically links upload 
     resourceId: pending.id,
     afterStateRef: `sha256:${ready.checksumSha256}`
   });
-  await repo.finalizeFileRecord({ fileRecord: ready, auditEvent });
+  const outboxEvent = createOutboxEvent({
+    id: `outbox-file-pg-${suffix}`,
+    tenantId: TENANT_A,
+    eventType: "api.file.upload_completed",
+    aggregateType: "file_record",
+    aggregateId: pending.id
+  });
+  await repo.finalizeFileRecord({
+    fileRecord: ready,
+    auditEvent,
+    outboxEvent,
+    outboxIdempotencyKey: `${TENANT_A}:api.file.upload_completed:${pending.id}`
+  });
   assert.equal((await repo.getFileRecordById(pending.id)).checksumSha256, ready.checksumSha256);
   assert.ok((await repo.listAuditEventsByTenant(TENANT_A)).some(
     (event) => event.eventId === auditEvent.eventId && event.resourceId === pending.id
+  ));
+  assert.ok((await outbox.list({ tenantId: TENANT_A })).some(
+    (job) => job.event.id === outboxEvent.id && job.event.aggregateId === pending.id
   ));
 
   const rollbackRecord = { ...pending, id: `file-pg-rollback-${suffix}`, storageKey: `tenants/tenant-commercial-sim-test/files/rollback-${suffix}` };

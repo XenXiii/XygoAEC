@@ -6,11 +6,13 @@ import {
   PRIVATE_PRODUCTION_ENV_VARS,
   PUBLIC_WEB_RUNTIME_ENV_VARS,
   REQUIRED_PRODUCTION_ENV_VARS,
+  SERVER_ONLY_OUTBOX_ENV_VARS,
   SERVER_ONLY_STORAGE_ENV_VARS,
   assertProductionApiEnvironment,
   assertProductionWebEnvironment,
   assertProductionWorkerEnvironment,
-  postgresPoolOptionsFromEnvironment
+  postgresPoolOptionsFromEnvironment,
+  workerRuntimeOptionsFromEnvironment
 } from "../src/index.js";
 import { validProductionEnvironment } from "./fixtures.js";
 
@@ -152,13 +154,21 @@ test("worker and OIDC clock numeric bounds reject unsafe extremes", () => {
     XYGO_WORKER_INTERVAL_MS: "100",
     XYGO_WORKER_MAX_ATTEMPTS: "1",
     XYGO_WORKER_BASE_BACKOFF_MS: "100",
-    XYGO_WORKER_CONCURRENCY: "1"
+    XYGO_WORKER_MAX_BACKOFF_MS: "100",
+    XYGO_WORKER_CONCURRENCY: "1",
+    XYGO_WORKER_STALE_AFTER_MS: "1000",
+    XYGO_WORKER_SHUTDOWN_TIMEOUT_MS: "1000",
+    XYGO_WORKER_MAX_DEAD_JOBS: "0"
   })));
   assert.doesNotThrow(() => assertProductionWorkerEnvironment(validProductionEnvironment({
     XYGO_WORKER_INTERVAL_MS: "60000",
     XYGO_WORKER_MAX_ATTEMPTS: "20",
     XYGO_WORKER_BASE_BACKOFF_MS: "900000",
-    XYGO_WORKER_CONCURRENCY: "64"
+    XYGO_WORKER_MAX_BACKOFF_MS: "86400000",
+    XYGO_WORKER_CONCURRENCY: "64",
+    XYGO_WORKER_STALE_AFTER_MS: "3600000",
+    XYGO_WORKER_SHUTDOWN_TIMEOUT_MS: "120000",
+    XYGO_WORKER_MAX_DEAD_JOBS: "100000"
   })));
   assert.doesNotThrow(() => assertProductionApiEnvironment(validProductionEnvironment({
     XYGO_OIDC_CLOCK_TOLERANCE_SEC: "0"
@@ -171,7 +181,11 @@ test("worker and OIDC clock numeric bounds reject unsafe extremes", () => {
     XYGO_WORKER_INTERVAL_MS: ["99", "60001"],
     XYGO_WORKER_MAX_ATTEMPTS: ["0", "21"],
     XYGO_WORKER_BASE_BACKOFF_MS: ["99", "900001"],
-    XYGO_WORKER_CONCURRENCY: ["0", "65"]
+    XYGO_WORKER_MAX_BACKOFF_MS: ["99", "86400001"],
+    XYGO_WORKER_CONCURRENCY: ["0", "65"],
+    XYGO_WORKER_STALE_AFTER_MS: ["999", "3600001"],
+    XYGO_WORKER_SHUTDOWN_TIMEOUT_MS: ["999", "120001"],
+    XYGO_WORKER_MAX_DEAD_JOBS: ["-1", "100001"]
   })) {
     for (const value of values) {
       assert.throws(
@@ -180,6 +194,13 @@ test("worker and OIDC clock numeric bounds reject unsafe extremes", () => {
       );
     }
   }
+  assert.throws(
+    () => assertProductionWorkerEnvironment(validProductionEnvironment({
+      XYGO_WORKER_BASE_BACKOFF_MS: "1000",
+      XYGO_WORKER_MAX_BACKOFF_MS: "999"
+    })),
+    /XYGO_WORKER_MAX_BACKOFF_MS/
+  );
   for (const value of ["-1", "301"]) {
     assert.throws(
       () => assertProductionApiEnvironment(validProductionEnvironment({
@@ -188,6 +209,29 @@ test("worker and OIDC clock numeric bounds reject unsafe extremes", () => {
       /XYGO_OIDC_CLOCK_TOLERANCE_SEC/
     );
   }
+});
+
+test("worker runtime settings have bounded local defaults and map every production control", () => {
+  assert.deepEqual(workerRuntimeOptionsFromEnvironment({}), {
+    intervalMs: 1000,
+    maxAttempts: 5,
+    baseBackoffMs: 1000,
+    maxBackoffMs: 900000,
+    concurrency: 4,
+    staleAfterMs: 60000,
+    shutdownTimeoutMs: 30000,
+    maxDeadJobs: 0
+  });
+  assert.deepEqual(workerRuntimeOptionsFromEnvironment(validProductionEnvironment()), {
+    intervalMs: 1000,
+    maxAttempts: 5,
+    baseBackoffMs: 1000,
+    maxBackoffMs: 900000,
+    concurrency: 4,
+    staleAfterMs: 60000,
+    shutdownTimeoutMs: 30000,
+    maxDeadJobs: 0
+  });
 });
 
 test("Postgres pool settings use safe defaults locally and bounded explicit values in production", () => {
@@ -231,6 +275,10 @@ test("public browser variables and private secrets are explicitly disjoint", () 
   );
   assert.deepEqual(
     PUBLIC_WEB_RUNTIME_ENV_VARS.filter((name) => SERVER_ONLY_STORAGE_ENV_VARS.includes(name)),
+    []
+  );
+  assert.deepEqual(
+    PUBLIC_WEB_RUNTIME_ENV_VARS.filter((name) => SERVER_ONLY_OUTBOX_ENV_VARS.includes(name)),
     []
   );
 });

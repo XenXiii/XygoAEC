@@ -27,7 +27,7 @@ function event(id) {
 
 test("outbox delivers pending events once", async () => {
   const store = createOutboxStore();
-  store.enqueue(event("e1"));
+  store.enqueue(event("e1"), { now: 0 });
   const delivered = [];
   const r = await processOutboxOnce({ store, handler: async (e) => delivered.push(e.id), now: 0 });
   assert.deepEqual(delivered, ["e1"]);
@@ -37,7 +37,7 @@ test("outbox delivers pending events once", async () => {
 
 test("outbox retries with backoff then dead-letters after max attempts", async () => {
   const store = createOutboxStore();
-  store.enqueue(event("e1"));
+  store.enqueue(event("e1"), { now: 0 });
   const failing = async () => {
     throw new Error("boom");
   };
@@ -45,7 +45,7 @@ test("outbox retries with backoff then dead-letters after max attempts", async (
   const r1 = await processOutboxOnce({ store, handler: failing, now: 0, maxAttempts: 2, baseBackoffMs: 1000 });
   assert.equal(r1.retried, 1);
   assert.equal(store.get("e1").status, "failed");
-  assert.equal(store.get("e1").nextAttemptAt, 1000);
+  assert.equal(store.get("e1").nextAttemptAt, new Date(1000).toISOString());
 
   // Not yet ready before backoff elapses.
   assert.equal(store.ready(500).length, 0);
@@ -55,19 +55,16 @@ test("outbox retries with backoff then dead-letters after max attempts", async (
   assert.equal(store.get("e1").status, "dead");
 });
 
-test("outbox processing is idempotent (no double delivery)", async () => {
+test("processed outbox jobs are not claimed twice", async () => {
   const store = createOutboxStore();
-  store.enqueue(event("e1"));
-  const processed = new Set();
+  store.enqueue(event("e1"), { now: 0 });
   let deliveries = 0;
   const handler = async () => {
     deliveries += 1;
   };
 
-  await processOutboxOnce({ store, handler, now: 0, processed });
-  // Simulate the record reappearing as pending; the processed guard must skip it.
-  store.patch("e1", { status: "pending" });
-  await processOutboxOnce({ store, handler, now: 0, processed });
+  await processOutboxOnce({ store, handler, now: 0 });
+  await processOutboxOnce({ store, handler, now: 0 });
 
   assert.equal(deliveries, 1);
   assert.equal(store.get("e1").status, "processed");
@@ -75,7 +72,7 @@ test("outbox processing is idempotent (no double delivery)", async () => {
 
 test("worker tick drains the outbox and can be stopped", async () => {
   const store = createOutboxStore();
-  store.enqueue(event("e1"));
+  store.enqueue(event("e1"), { now: 0 });
   const delivered = [];
   const worker = createWorker({ store, handler: async (e) => delivered.push(e.id) });
 
@@ -83,7 +80,7 @@ test("worker tick drains the outbox and can be stopped", async () => {
   assert.deepEqual(delivered, ["e1"]);
 
   await worker.stop();
-  store.enqueue(event("e2"));
+  store.enqueue(event("e2"), { now: 0 });
   await worker.tick(0); // no-op after stop
   assert.deepEqual(delivered, ["e1"]);
 });

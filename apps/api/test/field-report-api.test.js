@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { handleApiRequest } from "../src/handlers.js";
 import { createMemoryRepository } from "../src/repositories/memory.js";
+import { createOutboxStore } from "../src/reliability/outbox.js";
 
 const A = "tenant-commercial-sim";
 const B = "tenant-residential-sim";
@@ -28,12 +29,14 @@ function req(method, path, tenantId, body) {
     path,
     headers: tenantId ? { "x-staged-tenant-id": tenantId } : {},
     body: body ?? null,
-    repository: req.repo
+    repository: req.repo,
+    outbox: req.outbox
   });
 }
 
 async function withRepo(fn) {
   req.repo = createMemoryRepository();
+  req.outbox = createOutboxStore();
   await fn(req.repo);
 }
 
@@ -60,6 +63,10 @@ test("full workflow: capture -> draft -> approve, with audit at each write", asy
     assert.ok(actions.includes("api.field_report.created"));
     assert.ok(actions.includes("api.field_report.draft_generated"));
     assert.ok(actions.includes("api.field_report.reviewed"));
+    assert.deepEqual(
+      req.outbox.all().filter((job) => job.event.aggregateId === "fr-new").map((job) => job.event.eventType),
+      ["api.field_report.created", "api.field_report.draft_generated", "api.field_report.reviewed"]
+    );
   });
 });
 

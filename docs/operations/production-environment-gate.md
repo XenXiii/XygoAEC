@@ -86,12 +86,17 @@ outbox, and server-side monitoring values above. It additionally requires:
 - `XYGO_WORKER_INTERVAL_MS`: integer from 100 through 60000
 - `XYGO_WORKER_MAX_ATTEMPTS`: integer from 1 through 20
 - `XYGO_WORKER_BASE_BACKOFF_MS`: integer from 100 through 900000
+- `XYGO_WORKER_MAX_BACKOFF_MS`: integer from 100 through 86400000 and not below the base backoff
 - `XYGO_WORKER_CONCURRENCY`: integer from 1 through 64
+- `XYGO_WORKER_STALE_AFTER_MS`: integer from 1000 through 3600000
+- `XYGO_WORKER_SHUTDOWN_TIMEOUT_MS`: integer from 1000 through 120000
+- `XYGO_WORKER_MAX_DEAD_JOBS`: integer from 0 through 100000
 
 The tenant file-storage slice implements this private S3-compatible configuration, signed access,
 PostgreSQL metadata, and local development storage. The bucket, credentials, provider controls,
-malware/quarantine workflow, and restore drill are not provisioned by config validation. The current
-worker/outbox remains a validation placeholder. A green configuration-gate test is not deployment approval.
+malware/quarantine workflow, and restore drill are not provisioned by config validation. The durable
+PostgreSQL outbox and worker lifecycle are implemented, but no external delivery or monitoring provider
+is configured. See the [Durable Worker and Outbox Operations Runbook](durable-worker-outbox-runbook.md).
 
 Production URLs, PostgreSQL URLs, SMTP hosts, and email domains reject IANA-reserved example, test,
 and invalid names, local or loopback names, and obvious placeholder labels. This prevents the example
@@ -116,6 +121,6 @@ approved; that procedure is not implemented in this slice.
 ## What this gate does not do
 
 This change does not configure a live IdP, SMTP account, object-store service, telemetry backend, managed
-Postgres database, or durable worker. It does not deploy or execute the documented backup, restore,
+Postgres database, worker process, or provider integration. It does not deploy or execute the documented backup, restore,
 rollback, or migration procedures against a managed service. Live service configuration,
 secret-manager bindings, a successful restore drill, and staging smoke tests remain release blockers.

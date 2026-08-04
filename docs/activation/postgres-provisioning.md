@@ -42,6 +42,7 @@ in `schema_migrations`:
 2. `0002_paid_client_provisioning.sql`
 3. `0003_oidc_authorization.sql`
 4. `0004_tenant_file_storage.sql`
+5. `0005_durable_outbox.sql`
 
 The second migration adds canonical users, paid-client role assignments, business profiles, portal
 configuration, portal seed data, and provisioning events. Provisioning also uses the existing
@@ -51,6 +52,10 @@ The third migration adds explicit OIDC issuer/subject bindings. A verified token
 subject, but the API derives the internal user, tenant, and paid-client role only from the matching
 active Postgres user, tenant, role assignment, and identity binding. Token tenant and role claims do
 not authorize access.
+
+The fifth migration adds the durable PostgreSQL outbox used by API transactions and safe worker
+claims. See the [Durable Worker and Outbox Operations Runbook](../operations/durable-worker-outbox-runbook.md)
+for retry, dead-letter, replay, readiness, and shutdown behavior.
 
 The conformance suite checks the actual table names, recorded migration versions, canonical
 repository reads, cross-tenant project/user separation, portal branding/update separation,

@@ -57,6 +57,10 @@ File bytes use local private storage at `infrastructure/staged-data/uploads` by 
 uses private S3-compatible storage with presigned upload/download targets; file metadata and audit
 links remain canonical PostgreSQL records. See `docs/operations/tenant-file-storage-runbook.md`.
 
+Local API and worker processes share a WAL-enabled SQLite outbox by default. Production requires
+`XYGO_OUTBOX_BACKEND=postgres` and migration `0005_durable_outbox`; `/ready` includes outbox health.
+See `docs/operations/durable-worker-outbox-runbook.md`.
+
 This surface is staged-only.
-Current write scope is limited to staged in-memory project, coordination-issue, RFI, permit-package, review-session, AI-review-run, and AI-finding/disposition creation/update.
+Current write scope is limited to staged repository-backed project, coordination-issue, RFI, permit-package, review-session, field-report, file, AI-review-run, and AI-finding/disposition creation/update.
 Every staged write now appends a tenant-scoped audit event with hash chaining.
