@@ -8,6 +8,7 @@ import { Webhook } from "svix";
 
 import {
   createEmailDelivery,
+  emailDeliveryIntentMatches,
   emailConfigurationFromEnvironment,
   createLocalEmailSink,
   createResendEmailProvider,
@@ -69,6 +70,20 @@ test("local/staged environment cannot select the external email transport", () =
     }),
     /STAGED_MODE=false/
   );
+});
+
+test("logical delivery comparison is insensitive to JSON object key order", () => {
+  const original = delivery();
+  const roundTripped = {
+    ...original,
+    message: {
+      actionUrl: original.message.actionUrl,
+      html: original.message.html,
+      subject: original.message.subject,
+      text: original.message.text
+    }
+  };
+  assert.equal(emailDeliveryIntentMatches(original, roundTripped), true);
 });
 
 test("local sink is inspectable, persistent, and idempotent without sending email", async () => {

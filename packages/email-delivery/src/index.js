@@ -234,6 +234,11 @@ export function assertEmailDelivery(delivery) {
 }
 
 export function emailDeliveryIntentMatches(left, right) {
+  const sameMessage = left?.message && right?.message &&
+    left.message.subject === right.message.subject &&
+    left.message.text === right.message.text &&
+    left.message.html === right.message.html &&
+    left.message.actionUrl === right.message.actionUrl;
   return Boolean(left && right &&
     left.id === right.id &&
     left.tenantId === right.tenantId &&
@@ -243,7 +248,7 @@ export function emailDeliveryIntentMatches(left, right) {
     (left.resourceType ?? null) === (right.resourceType ?? null) &&
     (left.resourceId ?? null) === (right.resourceId ?? null) &&
     left.idempotencyKey === right.idempotencyKey &&
-    JSON.stringify(left.message) === JSON.stringify(right.message));
+    sameMessage);
 }
 
 export function markEmailDeliverySending(delivery, { attempt, now = new Date() }) {
