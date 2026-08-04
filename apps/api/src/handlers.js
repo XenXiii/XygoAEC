@@ -14,6 +14,10 @@ import { generateReportDraft, setReviewStatus, toClientView } from "../../../pac
 import { buildClientPortalView } from "../../../packages/client-portal/src/index.js";
 import { baseResponseHeaders } from "./http/headers.js";
 import { enqueueOutboxEvent, sharedOutbox } from "./reliability/outbox.js";
+import {
+  createEmailDelivery,
+  createEmailDeliveryOutboxEvent
+} from "../../../packages/email-delivery/src/index.js";
 import { createIdempotencyStore, idempotencyKeyFor } from "./reliability/idempotency.js";
 import {
   createPendingFileRecord,
@@ -670,7 +674,8 @@ async function routeApiRequest({
   authConfig = { mode: "staged" },
   outbox = sharedOutbox,
   idempotency = sharedIdempotency,
-  auditSigningKey = process.env.XYGO_AUDIT_SIGNING_KEY ?? null
+  auditSigningKey = process.env.XYGO_AUDIT_SIGNING_KEY ?? null,
+  webAppUrl = process.env.XYGO_WEB_APP_URL ?? "http://127.0.0.1:8080"
 }) {
   if (!["GET", "POST", "PUT", "DELETE"].includes(method)) {
     return json(405, {
@@ -969,6 +974,12 @@ async function routeApiRequest({
   }
 
   if (["GET", "POST"].includes(method) && parts.length === 4) {
+    if (method === "GET" && parts[3] === "email-deliveries") {
+      const denied = authorize({ principal: effectivePrincipal, tenantId, resource: "email_delivery", action: "read" });
+      if (denied) return denied;
+      const { items, pagination } = paginate(await repository.listEmailDeliveriesByTenant(tenantId), query);
+      return json(200, { items, pagination, staged: true });
+    }
     const resource = collectionResourcesBySegment.get(parts[3]);
     if (resource) {
       const action = method === "POST" ? "create" : "read";
@@ -1111,6 +1122,55 @@ async function routeApiRequest({
           signingKey: auditSigningKey
         });
         await enqueueTenantOutbox("api.field_report.reviewed", "field_report", reviewed.id, reviewed.status);
+        if (
+          reviewed.status === "approved" &&
+          typeof repository.listUsersByTenant === "function" &&
+          typeof repository.listRoleAssignmentsByTenant === "function" &&
+          typeof repository.createEmailDelivery === "function"
+        ) {
+          const [users, assignments] = await Promise.all([
+            repository.listUsersByTenant(tenantId),
+            repository.listRoleAssignmentsByTenant(tenantId)
+          ]);
+          const rolesByUser = new Map(assignments.map((assignment) => [assignment.userId, assignment.role]));
+          const recipients = users.filter((user) =>
+            user.status === "active" && ["client_owner", "client_viewer"].includes(rolesByUser.get(user.id))
+          );
+          for (const user of recipients) {
+            const delivery = createEmailDelivery({
+              tenantId,
+              recipientUserId: user.id,
+              recipientEmail: user.email,
+              kind: "report_ready",
+              resourceType: "field_report",
+              resourceId: reviewed.id,
+              idempotencyKey: `${tenantId}:email:report_ready:${reviewed.id}:${user.id}`,
+              templateData: {
+                recipientName: user.displayName ?? user.email,
+                reportTitle: reviewed.draft?.title ?? `${reviewed.siteName} field report`,
+                actionUrl: `${webAppUrl.replace(/\/$/, "")}/client-portal.html?projectId=${encodeURIComponent(reviewed.projectId)}`
+              }
+            }, { id: `${reviewed.id}-${user.id}-report-ready` });
+            const createdDelivery = await repository.createEmailDelivery(delivery);
+            if (!createdDelivery.created) continue;
+            await appendTenantAuditEvent({
+              repository,
+              tenantId,
+              actorId: effectivePrincipal.userId,
+              action: "email.delivery.queued",
+              resourceType: "email_delivery",
+              resourceId: delivery.id,
+              afterStateRef: delivery.status,
+              signingKey: auditSigningKey
+            });
+            const event = createEmailDeliveryOutboxEvent(delivery);
+            if (repository.supportsTransactionalOutbox) {
+              await repository.enqueueOutboxEvent(event, { idempotencyKey: delivery.idempotencyKey });
+            } else {
+              await enqueueOutboxEvent(outbox, event, { idempotencyKey: delivery.idempotencyKey });
+            }
+          }
+        }
       };
       if (repository.supportsTransactionalOutbox) await repository.runTransaction(persist);
       else await persist();

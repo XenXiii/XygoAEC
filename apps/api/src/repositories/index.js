@@ -36,6 +36,7 @@ export function createRepositoryFromEnv(env = process.env) {
     return createPostgresRepository({
       connectionString: env.XYGO_API_PG_URL,
       auditSigningKey: env.XYGO_AUDIT_SIGNING_KEY ?? null,
+      webAppUrl: env.XYGO_WEB_APP_URL ?? null,
       poolOptions: {
         ...postgresPoolOptionsFromEnvironment(env),
         application_name: "xygo-api"

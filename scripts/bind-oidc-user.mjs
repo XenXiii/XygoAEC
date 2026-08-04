@@ -19,6 +19,9 @@ if (!process.env.XYGO_API_PG_URL) {
 if (!process.env.XYGO_OIDC_ISSUER) {
   throw new Error("XYGO_OIDC_ISSUER is required and must exactly match the token issuer.");
 }
+if (!process.env.XYGO_WEB_APP_URL) {
+  throw new Error("XYGO_WEB_APP_URL is required so the binding transaction can queue the activation message.");
+}
 
 const tenantId = valueAfter("--tenant-id");
 const email = valueAfter("--email");
@@ -32,7 +35,8 @@ if (!tenantId || !email || !subject || !actorId) {
 
 const repository = createPostgresRepository({
   connectionString: process.env.XYGO_API_PG_URL,
-  auditSigningKey: process.env.XYGO_AUDIT_SIGNING_KEY ?? null
+  auditSigningKey: process.env.XYGO_AUDIT_SIGNING_KEY ?? null,
+  webAppUrl: process.env.XYGO_WEB_APP_URL
 });
 
 try {

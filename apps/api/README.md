@@ -5,6 +5,8 @@ Staged read-only HTTP surface for Xygo.
 Current endpoints:
 - `GET /health`
 - `GET /ready` (database connectivity and migration readiness for PostgreSQL)
+- `GET /metrics` (Prometheus-compatible request and dependency metrics)
+- `POST /webhooks/email` (signature-verified Resend delivery status)
 - `GET /v1/tenants/:tenantId/projects`
 - `POST /v1/tenants/:tenantId/projects`
 - `GET /v1/tenants/:tenantId/files`
@@ -31,6 +33,7 @@ Current endpoints:
 - `GET /v1/tenants/:tenantId/audit-events/verify`
 - `GET /v1/tenants/:tenantId/dashboard/executive`
 - `GET /v1/tenants/:tenantId/transfers`
+- `GET /v1/tenants/:tenantId/email-deliveries`
 
 Headers:
 - `x-staged-tenant-id`
@@ -60,6 +63,11 @@ links remain canonical PostgreSQL records. See `docs/operations/tenant-file-stor
 Local API and worker processes share a WAL-enabled SQLite outbox by default. Production requires
 `XYGO_OUTBOX_BACKEND=postgres` and migration `0005_durable_outbox`; `/ready` includes outbox health.
 See `docs/operations/durable-worker-outbox-runbook.md`.
+
+Approved reports and managed-IdP bindings can enqueue tenant-scoped email deliveries in the durable
+outbox. Local development writes messages to an inspectable sink; production uses private Resend
+credentials and signed webhooks. `/ready` includes database, storage, outbox, worker-heartbeat, and
+email-delivery state. See `docs/operations/email-monitoring-runbook.md`.
 
 This surface is staged-only.
 Current write scope is limited to staged repository-backed project, coordination-issue, RFI, permit-package, review-session, field-report, file, AI-review-run, and AI-finding/disposition creation/update.

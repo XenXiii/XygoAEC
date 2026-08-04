@@ -5,6 +5,12 @@ import { createPermitPackage } from "../../../../packages/permits/src/index.js";
 import { createReviewSession } from "../../../../packages/projects/src/index.js";
 import { generatePlatformBlueprint } from "../../../../packages/platform-blueprint/src/index.js";
 import { createFieldReport } from "../../../../packages/field-reporting/src/index.js";
+import {
+  applyEmailWebhookStatus,
+  emailDeliveryIntentMatches,
+  summarizeEmailDeliveryHealth,
+  summarizeWorkerHeartbeat
+} from "../../../../packages/email-delivery/src/index.js";
 import { createSeedState } from "./seed.js";
 
 function clone(value) {
@@ -42,6 +48,13 @@ export function createMemoryRepository() {
   );
   const fileRecordStore = new Map(
     seedState.fileRecords.map((fileRecord) => [fileRecord.id, clone(fileRecord)])
+  );
+  const emailDeliveryStore = new Map(
+    seedState.emailDeliveries.map((delivery) => [delivery.id, clone(delivery)])
+  );
+  const emailWebhookEventStore = new Map(seedState.emailWebhookEvents.map((event) => [event.id, clone(event)]));
+  const serviceHeartbeatStore = new Map(
+    seedState.serviceHeartbeats.map((heartbeat) => [`${heartbeat.serviceName}:${heartbeat.instanceId}`, clone(heartbeat)])
   );
   const auditEventStore = seedState.auditEvents.map((event) => clone(event));
 
@@ -244,6 +257,64 @@ export function createMemoryRepository() {
       if (!fileRecordStore.has(fileRecord.id)) throw new Error("File record not found.");
       fileRecordStore.set(fileRecord.id, clone(fileRecord));
       return clone(fileRecord);
+    },
+    createEmailDelivery(delivery) {
+      const existing = Array.from(emailDeliveryStore.values()).find((item) => item.idempotencyKey === delivery.idempotencyKey);
+      if (existing) {
+        if (!emailDeliveryIntentMatches(existing, delivery)) {
+          const error = new Error("Email delivery idempotency key is bound to a different logical delivery.");
+          error.code = "email_idempotency_conflict";
+          throw error;
+        }
+        return { created: false, delivery: clone(existing) };
+      }
+      if (emailDeliveryStore.has(delivery.id)) throw new Error("Email delivery id already exists.");
+      emailDeliveryStore.set(delivery.id, clone(delivery));
+      return { created: true, delivery: clone(delivery) };
+    },
+    getEmailDeliveryById(deliveryId) {
+      const delivery = emailDeliveryStore.get(deliveryId);
+      return delivery ? clone(delivery) : null;
+    },
+    listEmailDeliveriesByTenant(tenantId) {
+      return Array.from(emailDeliveryStore.values()).filter((delivery) => delivery.tenantId === tenantId).map(clone);
+    },
+    saveEmailDelivery(delivery) {
+      if (!emailDeliveryStore.has(delivery.id)) throw new Error("Email delivery not found.");
+      emailDeliveryStore.set(delivery.id, clone(delivery));
+      return clone(delivery);
+    },
+    finalizeEmailDelivery({ delivery, auditEvent = null, auditEventFactory = null }) {
+      if (!emailDeliveryStore.has(delivery.id)) throw new Error("Email delivery not found.");
+      emailDeliveryStore.set(delivery.id, clone(delivery));
+      const previous = auditEventStore.filter((event) => event.tenantId === delivery.tenantId).at(-1);
+      const evidence = auditEventFactory ? auditEventFactory(previous?.eventHash ?? null) : auditEvent;
+      if (evidence && !auditEventStore.some((event) => event.eventId === evidence.eventId)) auditEventStore.push(clone(evidence));
+      return clone(delivery);
+    },
+    applyEmailWebhook({ webhookId, event, auditEvent = null, auditEventFactory = null }) {
+      if (emailWebhookEventStore.has(webhookId)) return { duplicate: true, delivery: null };
+      const delivery = Array.from(emailDeliveryStore.values()).find(
+        (item) => item.providerMessageId === event?.data?.email_id
+      );
+      if (!delivery) return { duplicate: false, delivery: null };
+      const updated = applyEmailWebhookStatus(delivery, event);
+      emailDeliveryStore.set(updated.id, clone(updated));
+      emailWebhookEventStore.set(webhookId, { id: webhookId, tenantId: updated.tenantId, event: clone(event) });
+      const previous = auditEventStore.filter((item) => item.tenantId === updated.tenantId).at(-1);
+      const evidence = auditEventFactory ? auditEventFactory(updated, previous?.eventHash ?? null) : auditEvent;
+      if (evidence && !auditEventStore.some((item) => item.eventId === evidence.eventId)) auditEventStore.push(clone(evidence));
+      return { duplicate: false, delivery: clone(updated) };
+    },
+    recordServiceHeartbeat(heartbeat) {
+      serviceHeartbeatStore.set(`${heartbeat.serviceName}:${heartbeat.instanceId}`, clone(heartbeat));
+      return clone(heartbeat);
+    },
+    checkEmailDeliveryReadiness(options = {}) {
+      return summarizeEmailDeliveryHealth(Array.from(emailDeliveryStore.values()), options);
+    },
+    checkWorkerReadiness(options = {}) {
+      return summarizeWorkerHeartbeat(Array.from(serviceHeartbeatStore.values()), options);
     },
     finalizeFileRecord({ fileRecord, auditEvent }) {
       if (!fileRecordStore.has(fileRecord.id)) throw new Error("File record not found.");

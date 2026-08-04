@@ -47,6 +47,7 @@ console or approved automation:
 XYGO_API_PG_URL='<canonical-postgres-url>' \
 XYGO_OIDC_ISSUER='https://tenant.example-idp.com/' \
 XYGO_AUDIT_SIGNING_KEY='<secret-audit-key>' \
+XYGO_WEB_APP_URL='https://app.staging.xygo.example' \
 npm run bind:oidc-user -- \
   --tenant-id tenant-client-slug \
   --email owner@example.com \
@@ -57,9 +58,11 @@ npm run bind:oidc-user -- \
 
 The command never contacts the provider. It transactionally finds the active Postgres tenant, user,
 and role assignment; rejects missing, inactive, ambiguous, or conflicting records; inserts the unique
-issuer+subject binding; and appends `managed_idp.identity_bound` audit evidence. An exact rerun is
-idempotent. A different subject for the user, or reuse of a subject by another user, fails without a
-partial identity or audit record.
+issuer+subject binding; appends `managed_idp.identity_bound` audit evidence; and queues the activation
+delivery, its audit evidence, and durable outbox job. An exact rerun is idempotent. A different subject
+for the user, or reuse of a subject by another user, fails without a partial identity, activation
+delivery, outbox job, or audit record. The worker performs the external delivery later; see the
+[Email Delivery and Monitoring Operations Runbook](../operations/email-monitoring-runbook.md).
 
 ## Startup gates
 

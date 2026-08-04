@@ -63,6 +63,7 @@ const ALLOW_MATRIX = [
     "platform_blueprint",
     "field_report",
     "file_record",
+    "email_delivery",
     "client_portal"
   ].map((resource) => ({
     resource,

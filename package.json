@@ -30,6 +30,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1102.0",
     "@aws-sdk/s3-request-presigner": "^3.1102.0",
-    "pg": "^8.13.0"
+    "pg": "^8.13.0",
+    "svix": "^1.99.1"
   }
 }

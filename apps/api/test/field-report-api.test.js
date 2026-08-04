@@ -132,3 +132,39 @@ test("RBAC: read_only_auditor may read but not capture or draft", async () => {
   assert.equal(create.status, 403);
   assert.match(create.body.message, /role_denied/);
 });
+
+test("approving a report queues tenant recipients through the durable email outbox", async () => {
+  const repository = createMemoryRepository();
+  repository.listUsersByTenant = (tenantId) => tenantId === A ? [
+    { id: "client-owner-a", tenantId: A, email: "owner@client.invalid", displayName: "Client Owner", status: "active" },
+    { id: "client-viewer-a", tenantId: A, email: "viewer@client.invalid", displayName: "Client Viewer", status: "active" },
+    { id: "other-tenant", tenantId: B, email: "other@client.invalid", displayName: "Other", status: "active" }
+  ] : [];
+  repository.listRoleAssignmentsByTenant = (tenantId) => tenantId === A ? [
+    { userId: "client-owner-a", tenantId: A, role: "client_owner" },
+    { userId: "client-viewer-a", tenantId: A, role: "client_viewer" }
+  ] : [];
+  const outbox = createOutboxStore();
+  const request = (method, path, body = null) => handleApiRequest({
+    method,
+    path,
+    body,
+    headers: { "x-staged-tenant-id": A },
+    repository,
+    outbox,
+    webAppUrl: "https://app.xygoaec.com"
+  });
+  await request("POST", `/v1/tenants/${A}/field-reports`, intakeBody({ id: "fr-email-ready" }));
+  await request("POST", `/v1/tenants/${A}/field-reports/fr-email-ready/draft`);
+  const approved = await request(
+    "POST",
+    `/v1/tenants/${A}/field-reports/fr-email-ready/review`,
+    JSON.stringify({ nextStatus: "approved" })
+  );
+  assert.equal(approved.status, 200);
+  const deliveries = repository.listEmailDeliveriesByTenant(A);
+  assert.deepEqual(deliveries.map((item) => item.recipientUserId).sort(), ["client-owner-a", "client-viewer-a"]);
+  assert.ok(deliveries.every((item) => item.kind === "report_ready" && item.status === "queued"));
+  assert.equal(outbox.all().filter((job) => job.event.eventType === "email.delivery.requested").length, 2);
+  assert.ok(!deliveries.some((item) => item.tenantId === B));
+});

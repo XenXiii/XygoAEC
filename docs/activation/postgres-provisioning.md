@@ -43,6 +43,7 @@ in `schema_migrations`:
 3. `0003_oidc_authorization.sql`
 4. `0004_tenant_file_storage.sql`
 5. `0005_durable_outbox.sql`
+6. `0006_email_monitoring.sql`
 
 The second migration adds canonical users, paid-client role assignments, business profiles, portal
 configuration, portal seed data, and provisioning events. Provisioning also uses the existing
@@ -56,6 +57,10 @@ not authorize access.
 The fifth migration adds the durable PostgreSQL outbox used by API transactions and safe worker
 claims. See the [Durable Worker and Outbox Operations Runbook](../operations/durable-worker-outbox-runbook.md)
 for retry, dead-letter, replay, readiness, and shutdown behavior.
+
+The sixth migration adds tenant-scoped email delivery/status records, verified provider-event
+deduplication, and worker heartbeats. See the
+[Email Delivery and Monitoring Operations Runbook](../operations/email-monitoring-runbook.md).
 
 The conformance suite checks the actual table names, recorded migration versions, canonical
 repository reads, cross-tenant project/user separation, portal branding/update separation,

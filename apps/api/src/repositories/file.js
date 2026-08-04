@@ -8,6 +8,12 @@ import { createPermitPackage } from "../../../../packages/permits/src/index.js";
 import { createReviewSession } from "../../../../packages/projects/src/index.js";
 import { generatePlatformBlueprint } from "../../../../packages/platform-blueprint/src/index.js";
 import { createFieldReport } from "../../../../packages/field-reporting/src/index.js";
+import {
+  applyEmailWebhookStatus,
+  emailDeliveryIntentMatches,
+  summarizeEmailDeliveryHealth,
+  summarizeWorkerHeartbeat
+} from "../../../../packages/email-delivery/src/index.js";
 import { cloneState, createSeedState } from "./seed.js";
 
 function ensureDirectory(filePath) {
@@ -297,6 +303,82 @@ export function createFileRepository({ filePath }) {
       state.fileRecords = replaceById(state.fileRecords, cloneState(fileRecord));
       writeState(filePath, state);
       return cloneState(fileRecord);
+    },
+    createEmailDelivery(delivery) {
+      const state = readState(filePath);
+      state.emailDeliveries ??= [];
+      const existing = state.emailDeliveries.find((item) => item.idempotencyKey === delivery.idempotencyKey);
+      if (existing) {
+        if (!emailDeliveryIntentMatches(existing, delivery)) {
+          const error = new Error("Email delivery idempotency key is bound to a different logical delivery.");
+          error.code = "email_idempotency_conflict";
+          throw error;
+        }
+        return { created: false, delivery: cloneState(existing) };
+      }
+      if (state.emailDeliveries.some((item) => item.id === delivery.id)) throw new Error("Email delivery id already exists.");
+      state.emailDeliveries.push(cloneState(delivery));
+      writeState(filePath, state);
+      return { created: true, delivery: cloneState(delivery) };
+    },
+    getEmailDeliveryById(deliveryId) {
+      const delivery = (readState(filePath).emailDeliveries ?? []).find((item) => item.id === deliveryId);
+      return delivery ? cloneState(delivery) : null;
+    },
+    listEmailDeliveriesByTenant(tenantId) {
+      return listByTenant(readState(filePath).emailDeliveries ?? [], tenantId).map(cloneState);
+    },
+    saveEmailDelivery(delivery) {
+      const state = readState(filePath);
+      state.emailDeliveries ??= [];
+      if (!state.emailDeliveries.some((item) => item.id === delivery.id)) throw new Error("Email delivery not found.");
+      state.emailDeliveries = replaceById(state.emailDeliveries, cloneState(delivery));
+      writeState(filePath, state);
+      return cloneState(delivery);
+    },
+    finalizeEmailDelivery({ delivery, auditEvent = null, auditEventFactory = null }) {
+      const state = readState(filePath);
+      state.emailDeliveries ??= [];
+      if (!state.emailDeliveries.some((item) => item.id === delivery.id)) throw new Error("Email delivery not found.");
+      state.emailDeliveries = replaceById(state.emailDeliveries, cloneState(delivery));
+      const previous = state.auditEvents.filter((event) => event.tenantId === delivery.tenantId).at(-1);
+      const evidence = auditEventFactory ? auditEventFactory(previous?.eventHash ?? null) : auditEvent;
+      if (evidence && !state.auditEvents.some((event) => event.eventId === evidence.eventId)) state.auditEvents.push(cloneState(evidence));
+      writeState(filePath, state);
+      return cloneState(delivery);
+    },
+    applyEmailWebhook({ webhookId, event, auditEvent = null, auditEventFactory = null }) {
+      const state = readState(filePath);
+      state.emailDeliveries ??= [];
+      state.emailWebhookEvents ??= [];
+      if (state.emailWebhookEvents.some((item) => item.id === webhookId)) return { duplicate: true, delivery: null };
+      const delivery = state.emailDeliveries.find((item) => item.providerMessageId === event?.data?.email_id);
+      if (!delivery) return { duplicate: false, delivery: null };
+      const updated = applyEmailWebhookStatus(delivery, event);
+      state.emailDeliveries = replaceById(state.emailDeliveries, cloneState(updated));
+      state.emailWebhookEvents.push({ id: webhookId, tenantId: updated.tenantId, event: cloneState(event) });
+      const previous = state.auditEvents.filter((item) => item.tenantId === updated.tenantId).at(-1);
+      const evidence = auditEventFactory ? auditEventFactory(updated, previous?.eventHash ?? null) : auditEvent;
+      if (evidence && !state.auditEvents.some((item) => item.eventId === evidence.eventId)) state.auditEvents.push(cloneState(evidence));
+      writeState(filePath, state);
+      return { duplicate: false, delivery: cloneState(updated) };
+    },
+    recordServiceHeartbeat(heartbeat) {
+      const state = readState(filePath);
+      state.serviceHeartbeats ??= [];
+      const key = `${heartbeat.serviceName}:${heartbeat.instanceId}`;
+      state.serviceHeartbeats = [
+        ...state.serviceHeartbeats.filter((item) => `${item.serviceName}:${item.instanceId}` !== key),
+        cloneState(heartbeat)
+      ];
+      writeState(filePath, state);
+      return cloneState(heartbeat);
+    },
+    checkEmailDeliveryReadiness(options = {}) {
+      return summarizeEmailDeliveryHealth(readState(filePath).emailDeliveries ?? [], options);
+    },
+    checkWorkerReadiness(options = {}) {
+      return summarizeWorkerHeartbeat(readState(filePath).serviceHeartbeats ?? [], options);
     },
     finalizeFileRecord({ fileRecord, auditEvent }) {
       const state = readState(filePath);

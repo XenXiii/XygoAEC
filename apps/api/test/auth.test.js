@@ -10,10 +10,10 @@ import { handleApiRequest } from "../src/handlers.js";
 import { createMemoryRepository } from "../src/repositories/memory.js";
 import { POSTGRES_MIGRATIONS } from "../src/repositories/postgres-migrations.js";
 
-test("ordered Postgres migrations include authorization, storage, and durable outbox", () => {
+test("ordered Postgres migrations include authorization, storage, outbox, and email monitoring", () => {
   assert.deepEqual(
     POSTGRES_MIGRATIONS.map(({ version }) => version),
-    ["0001_init", "0002_paid_client_provisioning", "0003_oidc_authorization", "0004_tenant_file_storage", "0005_durable_outbox"]
+    ["0001_init", "0002_paid_client_provisioning", "0003_oidc_authorization", "0004_tenant_file_storage", "0005_durable_outbox", "0006_email_monitoring"]
   );
 });
 

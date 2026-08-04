@@ -29,10 +29,18 @@ test("metrics count requests and expose Prometheus text", () => {
   metrics.recordRequest({ method: "GET", status: 200, durationMs: 12 });
   metrics.recordRequest({ method: "GET", status: 200, durationMs: 40 });
   metrics.recordRequest({ method: "POST", status: 403, durationMs: 3 });
+  metrics.setGauge("xygo_dependency_ready", { dependency: "database" }, 1);
+  metrics.setGauge("xygo_outbox_backlog", {}, 4);
+  metrics.setGauge("xygo_email_delivery_failures", {}, 0);
 
   const text = metrics.render();
   assert.match(text, /xygo_http_requests_total\{method="GET",status="200"\} 2/);
   assert.match(text, /xygo_http_requests_total\{method="POST",status="403"\} 1/);
   assert.match(text, /xygo_http_request_duration_ms_count 3/);
   assert.match(text, /# TYPE xygo_http_request_duration_ms histogram/);
+  assert.match(text, /# TYPE xygo_dependency_ready gauge/);
+  assert.match(text, /xygo_dependency_ready\{dependency="database"\} 1/);
+  assert.match(text, /# TYPE xygo_outbox_backlog gauge/);
+  assert.match(text, /xygo_outbox_backlog 4/);
+  assert.match(text, /# TYPE xygo_email_delivery_failures gauge/);
 });

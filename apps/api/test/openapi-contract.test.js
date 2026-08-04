@@ -16,7 +16,12 @@ const FILE = "file-openapi-contract";
 
 // The SSE stream is served by the server layer (server.js), not handleApiRequest,
 // so it is excluded from the request-level reachability check below.
-const SERVER_LAYER_PATHS = new Set(["/v1/tenants/{tenantId}/events/stream"]);
+const SERVER_LAYER_PATHS = new Set([
+  "/ready",
+  "/metrics",
+  "/webhooks/email",
+  "/v1/tenants/{tenantId}/events/stream"
+]);
 
 function concrete(pathTemplate) {
   return pathTemplate
@@ -96,6 +101,9 @@ test("documented path set matches the implemented surface (drift guard)", () => 
   // guard that caught the blueprint-workspace route being undocumented.
   const expected = [
     "/health",
+    "/ready",
+    "/metrics",
+    "/webhooks/email",
     "/v1/tenants/{tenantId}/projects",
     "/v1/tenants/{tenantId}/dashboard/executive",
     "/v1/tenants/{tenantId}/blueprint-workspace",
@@ -112,6 +120,7 @@ test("documented path set matches the implemented surface (drift guard)", () => 
     "/v1/tenants/{tenantId}/files/{fileId}/download",
     "/v1/tenants/{tenantId}/files/{fileId}/content",
     "/v1/tenants/{tenantId}/client-portal",
+    "/v1/tenants/{tenantId}/email-deliveries",
     "/v1/tenants/{tenantId}/issues",
     "/v1/tenants/{tenantId}/rfis",
     "/v1/tenants/{tenantId}/permits",
