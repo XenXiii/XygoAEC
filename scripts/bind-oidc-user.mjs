@@ -2,8 +2,10 @@
 import { createPostgresRepository } from "../apps/api/src/repositories/postgres.js";
 
 function valueAfter(flag) {
-  const index = process.argv.indexOf(flag);
-  return index === -1 ? null : process.argv[index + 1];
+  const indexes = process.argv.flatMap((value, index) => value === flag ? [index] : []);
+  if (indexes.length !== 1) return null;
+  const value = process.argv[indexes[0] + 1];
+  return value && !value.startsWith("--") ? value : null;
 }
 
 if (!process.argv.includes("--approve-managed-idp-binding")) {

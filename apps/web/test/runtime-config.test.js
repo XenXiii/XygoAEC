@@ -33,6 +33,10 @@ test("production web startup fails closed without managed OIDC configuration", (
     /XYGO_WEB_API_BASE_URL must be an HTTPS URL/
   );
   assert.throws(
+    () => createWebServer({ env: { ...productionEnv, XYGO_WEB_APP_URL: "https://app.xygo.example?bad=callback" } }),
+    /XYGO_WEB_APP_URL must be an HTTPS URL/
+  );
+  assert.throws(
     () => createWebServer({ env: { ...productionEnv, XYGO_WEB_OIDC_CLIENT_SECRET: "must-not-reach-browser" } }),
     /CLIENT_SECRET is forbidden/
   );
@@ -40,6 +44,7 @@ test("production web startup fails closed without managed OIDC configuration", (
 
 test("public runtime config fixes browser auth to code plus PKCE and memory tokens", () => {
   const config = assertWebRuntimeConfig(loadWebRuntimeConfig(productionEnv), productionEnv);
+  config.auth.internalSecret = "must-not-reach-browser";
   const publicConfig = publicWebRuntimeConfig(config);
   assert.equal(publicConfig.auth.responseType, "code");
   assert.equal(publicConfig.auth.pkceMethod, "S256");
@@ -47,10 +52,15 @@ test("public runtime config fixes browser auth to code plus PKCE and memory toke
   assert.equal(publicConfig.auth.redirectUri, "https://app.xygo.example/auth/callback");
   assert.ok(publicConfig.auth.scopes.includes("openid"));
   assert.equal("clientSecret" in publicConfig.auth, false);
+  assert.equal("internalSecret" in publicConfig.auth, false);
 });
 
 test("web server exposes only the non-secret managed IdP runtime manifest", () => {
-  const server = createWebServer({ env: productionEnv });
+  const secretValues = {
+    XYGO_API_PG_URL: "postgres://user:database-secret@db.example/xygo",
+    XYGO_AUDIT_SIGNING_KEY: "audit-signing-secret"
+  };
+  const server = createWebServer({ env: { ...productionEnv, ...secretValues } });
   let status;
   let headers;
   let responseBody;
@@ -68,5 +78,6 @@ test("web server exposes only the non-secret managed IdP runtime manifest", () =
   const body = JSON.parse(responseBody);
   assert.equal(body.auth.provider, "auth0");
   assert.equal(body.apiBaseUrl, "https://api.xygo.example");
-  assert.equal(JSON.stringify(body).includes("must-not-reach-browser"), false);
+  assert.equal(JSON.stringify(body).includes("database-secret"), false);
+  assert.equal(JSON.stringify(body).includes("audit-signing-secret"), false);
 });

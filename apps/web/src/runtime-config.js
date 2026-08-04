@@ -19,15 +19,15 @@ function stagedModeEnabled(value) {
   throw new Error("STAGED_MODE must be true or false.");
 }
 
-function assertHttpsUrl(value, label) {
+function assertHttpsUrl(value, label, { allowQuery = false } = {}) {
   let url;
   try {
     url = new URL(value);
   } catch {
     throw new Error(`${label} must be an absolute HTTPS URL.`);
   }
-  if (url.protocol !== "https:" || !url.hostname || url.username || url.password || url.hash) {
-    throw new Error(`${label} must be an HTTPS URL without credentials or a fragment.`);
+  if (url.protocol !== "https:" || !url.hostname || url.username || url.password || url.hash || (!allowQuery && url.search)) {
+    throw new Error(`${label} must be an HTTPS URL without credentials, a fragment, or unsupported URL components.`);
   }
 }
 
@@ -102,15 +102,15 @@ export function assertWebRuntimeConfig(config, env = process.env) {
   }
 
   if (config.productionMode) {
-    for (const [value, label] of [
-      [config.appUrl, "XYGO_WEB_APP_URL"],
-      [config.apiBaseUrl, "XYGO_WEB_API_BASE_URL"],
-      [config.auth.issuer, "XYGO_OIDC_ISSUER"],
-      [config.auth.authorizationEndpoint, "XYGO_WEB_OIDC_AUTHORIZATION_ENDPOINT"],
-      [config.auth.tokenEndpoint, "XYGO_WEB_OIDC_TOKEN_ENDPOINT"],
-      [config.auth.endSessionEndpoint, "XYGO_WEB_OIDC_END_SESSION_ENDPOINT"]
+    for (const [value, label, allowQuery] of [
+      [config.appUrl, "XYGO_WEB_APP_URL", false],
+      [config.apiBaseUrl, "XYGO_WEB_API_BASE_URL", false],
+      [config.auth.issuer, "XYGO_OIDC_ISSUER", false],
+      [config.auth.authorizationEndpoint, "XYGO_WEB_OIDC_AUTHORIZATION_ENDPOINT", true],
+      [config.auth.tokenEndpoint, "XYGO_WEB_OIDC_TOKEN_ENDPOINT", true],
+      [config.auth.endSessionEndpoint, "XYGO_WEB_OIDC_END_SESSION_ENDPOINT", true]
     ]) {
-      assertHttpsUrl(value, label);
+      assertHttpsUrl(value, label, { allowQuery });
     }
   }
   return config;
@@ -120,6 +120,21 @@ export function publicWebRuntimeConfig(config) {
   return {
     appUrl: config.appUrl,
     apiBaseUrl: config.apiBaseUrl,
-    auth: config.auth
+    auth: config.auth.mode === "staged" ? { mode: "staged" } : {
+      mode: config.auth.mode,
+      provider: config.auth.provider,
+      issuer: config.auth.issuer,
+      audience: config.auth.audience,
+      clientId: config.auth.clientId,
+      authorizationEndpoint: config.auth.authorizationEndpoint,
+      tokenEndpoint: config.auth.tokenEndpoint,
+      endSessionEndpoint: config.auth.endSessionEndpoint,
+      scopes: [...config.auth.scopes],
+      responseType: config.auth.responseType,
+      pkceMethod: config.auth.pkceMethod,
+      redirectUri: config.auth.redirectUri,
+      postLogoutRedirectUri: config.auth.postLogoutRedirectUri,
+      accessTokenStorage: config.auth.accessTokenStorage
+    }
   };
 }
