@@ -345,6 +345,28 @@ test("postgres email delivery is transactional, tenant-scoped, worker-backed, an
   await cleanupPool.query("DELETE FROM email_webhook_events");
   await cleanupPool.query("DELETE FROM email_deliveries");
   await cleanupPool.query("DELETE FROM service_heartbeats");
+  const crossTenantUser = {
+    id: `email-cross-tenant-user-${suffix}`,
+    tenantId: TENANT_B,
+    email: `email-cross-tenant-${suffix}@client.invalid`,
+    displayName: "Cross-tenant fixture",
+    status: "active"
+  };
+  await cleanupPool.query(
+    "INSERT INTO tenants (id, name) VALUES ($1,$1) ON CONFLICT (id) DO NOTHING",
+    [TENANT_B]
+  );
+  await cleanupPool.query(
+    "INSERT INTO users (id, tenant_id, email, display_name, status, payload) VALUES ($1,$2,$3,$4,$5,$6)",
+    [
+      crossTenantUser.id,
+      crossTenantUser.tenantId,
+      crossTenantUser.email,
+      crossTenantUser.displayName,
+      crossTenantUser.status,
+      crossTenantUser
+    ]
+  );
   await cleanupPool.end();
   const repository = createPostgresRepository({ connectionString: PG_URL, seedSyntheticData: true });
   const outbox = createPostgresOutboxStore({ connectionString: PG_URL });
@@ -386,7 +408,6 @@ test("postgres email delivery is transactional, tenant-scoped, worker-backed, an
   );
   assert.ok((await repository.listEmailDeliveriesByTenant(TENANT_A)).some((item) => item.id === delivery.id));
   assert.ok(!(await repository.listEmailDeliveriesByTenant(TENANT_B)).some((item) => item.id === delivery.id));
-  const crossTenantUser = (await repository.listUsersByTenant(TENANT_B))[0];
   const crossTenantRecipient = createEmailDelivery({
     tenantId: TENANT_A,
     recipientUserId: crossTenantUser.id,
