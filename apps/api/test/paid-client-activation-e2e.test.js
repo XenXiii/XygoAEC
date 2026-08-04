@@ -109,7 +109,8 @@ test("paid-client activation works end to end through OIDC, HTTP, and canonical 
 
   const repository = createPostgresRepository({
     connectionString: PG_URL,
-    auditSigningKey: runtimeEnv.XYGO_AUDIT_SIGNING_KEY
+    auditSigningKey: runtimeEnv.XYGO_AUDIT_SIGNING_KEY,
+    seedSyntheticData: true
   });
   const pg = (await import("pg")).default;
   const adminPool = new pg.Pool({ connectionString: PG_URL });
