@@ -5,6 +5,7 @@ node_modules/
 infrastructure/staged-data/api-store.json
 infrastructure/staged-data/api-store.sqlite
 infrastructure/staged-data/*.tmp
+infrastructure/staged-data/uploads/
 
 # Harness / workspace state
 .openclaw/

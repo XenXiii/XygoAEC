@@ -41,6 +41,7 @@ in `schema_migrations`:
 1. `0001_init.sql`
 2. `0002_paid_client_provisioning.sql`
 3. `0003_oidc_authorization.sql`
+4. `0004_tenant_file_storage.sql`
 
 The second migration adds canonical users, paid-client role assignments, business profiles, portal
 configuration, portal seed data, and provisioning events. Provisioning also uses the existing

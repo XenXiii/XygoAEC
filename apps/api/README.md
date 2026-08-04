@@ -7,6 +7,13 @@ Current endpoints:
 - `GET /ready` (database connectivity and migration readiness for PostgreSQL)
 - `GET /v1/tenants/:tenantId/projects`
 - `POST /v1/tenants/:tenantId/projects`
+- `GET /v1/tenants/:tenantId/files`
+- `POST /v1/tenants/:tenantId/files/upload-intents`
+- `PUT /v1/tenants/:tenantId/files/:fileId/content` (authenticated local-development proxy only)
+- `POST /v1/tenants/:tenantId/files/:fileId/complete`
+- `GET /v1/tenants/:tenantId/files/:fileId/download`
+- `GET /v1/tenants/:tenantId/files/:fileId/content` (authenticated local-development proxy only)
+- `DELETE /v1/tenants/:tenantId/files/:fileId`
 - `GET /v1/tenants/:tenantId/issues`
 - `POST /v1/tenants/:tenantId/issues`
 - `GET /v1/tenants/:tenantId/rfis`
@@ -45,6 +52,10 @@ Repository modes:
   production validation rejects that setting
 - override file path with `XYGO_API_DATA_PATH=relative/path.json`
 - override sqlite path with `XYGO_API_DB_PATH=relative/path.sqlite`
+
+File bytes use local private storage at `infrastructure/staged-data/uploads` by default. Production
+uses private S3-compatible storage with presigned upload/download targets; file metadata and audit
+links remain canonical PostgreSQL records. See `docs/operations/tenant-file-storage-runbook.md`.
 
 This surface is staged-only.
 Current write scope is limited to staged in-memory project, coordination-issue, RFI, permit-package, review-session, AI-review-run, and AI-finding/disposition creation/update.

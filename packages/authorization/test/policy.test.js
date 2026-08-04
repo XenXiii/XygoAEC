@@ -71,16 +71,23 @@ test("paid-client roles enforce owner, staff, and viewer permissions", () => {
   assert.equal(decision("client_owner", "field_report", "update").allowed, true);
   assert.equal(decision("client_owner", "project", "create").allowed, true);
   assert.equal(decision("client_owner", "client_portal", "read").allowed, true);
+  assert.equal(decision("client_owner", "file_record", "delete").allowed, true);
   assert.equal(decision("client_staff", "field_report", "create").allowed, true);
   assert.equal(decision("client_staff", "field_report", "update").allowed, true);
   assert.equal(decision("client_staff", "client_portal", "read").allowed, true);
   assert.equal(decision("client_staff", "project", "create").allowed, false);
   assert.equal(decision("client_staff", "coordination_issue", "create").allowed, false);
+  assert.equal(decision("client_staff", "file_record", "create").allowed, true);
+  assert.equal(decision("client_staff", "file_record", "update").allowed, true);
+  assert.equal(decision("client_staff", "file_record", "delete").allowed, true);
   assert.equal(decision("client_viewer", "project", "read").allowed, true);
   assert.equal(decision("client_viewer", "client_portal", "read").allowed, true);
   assert.equal(decision("client_viewer", "field_report", "read").allowed, false);
   assert.equal(decision("client_viewer", "field_report", "create").allowed, false);
   assert.equal(decision("client_viewer", "field_report", "update").allowed, false);
+  assert.equal(decision("client_viewer", "file_record", "read").allowed, true);
+  assert.equal(decision("client_viewer", "file_record", "create").allowed, false);
+  assert.equal(decision("client_viewer", "file_record", "delete").allowed, false);
 
   for (const organizationRole of ["xygo_admin", "client_owner", "client_staff", "client_viewer"]) {
     const crossTenant = canPerform({

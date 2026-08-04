@@ -29,6 +29,7 @@ export function createSeedState() {
     aiFindings: clone(syntheticAiFindings),
     platformBlueprints: clone(syntheticPlatformBlueprints),
     fieldReports: clone(syntheticFieldReports),
+    fileRecords: [],
     auditEvents: []
   };
 }

@@ -62,6 +62,7 @@ const ALLOW_MATRIX = [
     "transfer",
     "platform_blueprint",
     "field_report",
+    "file_record",
     "client_portal"
   ].map((resource) => ({
     resource,
@@ -73,18 +74,19 @@ const ALLOW_MATRIX = [
       "supervisor",
       "read_only_auditor",
       ...(resource === "field_report" ? ["client_staff"] : []),
+      ...(resource === "file_record" ? ["client_staff", "client_viewer"] : []),
       ...(resource === "client_portal" ? ["client_staff", "client_viewer"] : [])
     ],
     projectRoles: ["project_executive", "project_manager", "design_manager", "viewer"]
   })),
-  ...["coordination_issue", "rfi", "permit_package", "review_session", "ai_review_run", "ai_finding", "platform_blueprint", "field_report"].map(
+  ...["coordination_issue", "rfi", "permit_package", "review_session", "ai_review_run", "ai_finding", "platform_blueprint", "field_report", "file_record"].map(
     (resource) => ({
       resource,
       action: "create",
       organizationRoles: [
         "platform_admin",
         "company_admin",
-        ...(resource === "field_report" ? ["client_staff"] : [])
+        ...(["field_report", "file_record"].includes(resource) ? ["client_staff"] : [])
       ],
       projectRoles: ["project_manager", "design_manager"]
     })
@@ -92,6 +94,18 @@ const ALLOW_MATRIX = [
   {
     resource: "field_report",
     action: "update",
+    organizationRoles: ["platform_admin", "company_admin", "client_staff"],
+    projectRoles: ["project_manager", "design_manager"]
+  },
+  {
+    resource: "file_record",
+    action: "update",
+    organizationRoles: ["platform_admin", "company_admin", "client_staff"],
+    projectRoles: ["project_manager", "design_manager"]
+  },
+  {
+    resource: "file_record",
+    action: "delete",
     organizationRoles: ["platform_admin", "company_admin", "client_staff"],
     projectRoles: ["project_manager", "design_manager"]
   },

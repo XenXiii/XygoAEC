@@ -13,7 +13,7 @@ import { POSTGRES_MIGRATIONS } from "../src/repositories/postgres-migrations.js"
 test("OIDC authorization migration is registered for every Postgres environment", () => {
   assert.deepEqual(
     POSTGRES_MIGRATIONS.map(({ version }) => version),
-    ["0001_init", "0002_paid_client_provisioning", "0003_oidc_authorization"]
+    ["0001_init", "0002_paid_client_provisioning", "0003_oidc_authorization", "0004_tenant_file_storage"]
   );
 });
 

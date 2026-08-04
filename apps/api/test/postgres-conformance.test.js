@@ -6,6 +6,7 @@ import { createStaticJwks } from "../src/auth/jwks.js";
 import { resolveOidcPrincipal } from "../src/auth/principal.js";
 import { handleApiRequest } from "../src/handlers.js";
 import { createPostgresRepository } from "../src/repositories/postgres.js";
+import { createAuditEvent } from "../../../packages/audit/src/foundation.js";
 import {
   applyPostgresMigrations,
   checkPostgresReadiness
@@ -70,6 +71,7 @@ test("postgres schema contains every canonical provisioning table", { skip }, as
   const expectedTables = [
     "audit_events",
     "business_profiles",
+    "file_records",
     "oidc_identities",
     "platform_blueprints",
     "portal_configurations",
@@ -91,7 +93,8 @@ test("postgres schema contains every canonical provisioning table", { skip }, as
   assert.deepEqual(migrations.rows.map((row) => row.version), [
     "0001_init",
     "0002_paid_client_provisioning",
-    "0003_oidc_authorization"
+    "0003_oidc_authorization",
+    "0004_tenant_file_storage"
   ]);
 });
 
@@ -105,7 +108,8 @@ test("postgres readiness verifies connectivity and the complete migration chain"
   assert.deepEqual(readiness.migrations, [
     "0001_init",
     "0002_paid_client_provisioning",
-    "0003_oidc_authorization"
+    "0003_oidc_authorization",
+    "0004_tenant_file_storage"
   ]);
 });
 
@@ -140,7 +144,7 @@ test("postgres repository refuses an unmigrated schema without changing it", { s
 
   await assert.rejects(
     () => repository.checkReadiness(),
-    (error) => error.code === "postgres_schema_not_current" && error.migrationStatus.pending.length === 3
+    (error) => error.code === "postgres_schema_not_current" && error.migrationStatus.pending.length === 4
   );
   const tables = await adminPool.query(
     "SELECT table_name FROM information_schema.tables WHERE table_schema = $1",
@@ -220,6 +224,65 @@ test("postgres backend satisfies the repository contract", { skip }, async (t) =
   const events = await repo.listAuditEventsByTenant(TENANT_A);
   const ids = events.map((e) => e.eventId);
   assert.deepEqual(ids.slice(-2), ["audit-pg-1", "audit-pg-2"]);
+});
+
+test("postgres persists tenant-scoped file metadata and atomically links upload audit evidence", { skip }, async (t) => {
+  const repo = createPostgresRepository({ connectionString: PG_URL, seedSyntheticData: true });
+  t.after(() => repo.close());
+  const suffix = `${process.pid}-${Date.now()}`;
+  const pending = {
+    id: `file-pg-${suffix}`,
+    tenantId: TENANT_A,
+    projectId: "project-commercial-b",
+    fieldReportId: "field-report-commercial-b",
+    fileClass: "report_photo",
+    originalFilename: "postgres-photo.jpg",
+    mimeType: "image/jpeg",
+    sizeBytes: 4,
+    storageKey: `tenants/tenant-commercial-sim-test/files/${suffix}`,
+    status: "pending_upload",
+    checksumSha256: null,
+    clientVisible: true,
+    createdBy: "postgres-test-user",
+    createdAt: "2026-08-04T00:00:00.000Z",
+    updatedAt: "2026-08-04T00:00:00.000Z",
+    retentionUntil: "2027-08-04T00:00:00.000Z",
+    deletedAt: null
+  };
+  await repo.createFileRecord(pending);
+  assert.equal((await repo.getFileRecordById(pending.id)).status, "pending_upload");
+  assert.ok((await repo.listFileRecordsByTenant(TENANT_A)).some((item) => item.id === pending.id));
+  assert.ok(!(await repo.listFileRecordsByTenant(TENANT_B)).some((item) => item.id === pending.id));
+
+  const ready = { ...pending, status: "ready", checksumSha256: "a".repeat(64) };
+  const auditEvent = createAuditEvent({
+    eventId: `audit-file-pg-${suffix}`,
+    tenantId: TENANT_A,
+    action: "api.file.upload_completed",
+    resourceType: "file_record",
+    resourceId: pending.id,
+    afterStateRef: `sha256:${ready.checksumSha256}`
+  });
+  await repo.finalizeFileRecord({ fileRecord: ready, auditEvent });
+  assert.equal((await repo.getFileRecordById(pending.id)).checksumSha256, ready.checksumSha256);
+  assert.ok((await repo.listAuditEventsByTenant(TENANT_A)).some(
+    (event) => event.eventId === auditEvent.eventId && event.resourceId === pending.id
+  ));
+
+  const rollbackRecord = { ...pending, id: `file-pg-rollback-${suffix}`, storageKey: `tenants/tenant-commercial-sim-test/files/rollback-${suffix}` };
+  await repo.createFileRecord(rollbackRecord);
+  const duplicateAudit = createAuditEvent({
+    eventId: auditEvent.eventId,
+    tenantId: TENANT_A,
+    action: "api.file.upload_completed",
+    resourceType: "file_record",
+    resourceId: rollbackRecord.id
+  });
+  await assert.rejects(() => repo.finalizeFileRecord({
+    fileRecord: { ...rollbackRecord, status: "ready" },
+    auditEvent: duplicateAudit
+  }));
+  assert.equal((await repo.getFileRecordById(rollbackRecord.id)).status, "pending_upload");
 });
 
 function provisioningInput(slug, email = `owner@${slug}.invalid`) {

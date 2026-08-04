@@ -40,6 +40,9 @@ export function createMemoryRepository() {
   const fieldReportStore = new Map(
     seedState.fieldReports.map((fieldReport) => [fieldReport.id, clone(fieldReport)])
   );
+  const fileRecordStore = new Map(
+    seedState.fileRecords.map((fileRecord) => [fileRecord.id, clone(fileRecord)])
+  );
   const auditEventStore = seedState.auditEvents.map((event) => clone(event));
 
   return {
@@ -222,6 +225,31 @@ export function createMemoryRepository() {
     saveFieldReport(report) {
       fieldReportStore.set(report.id, clone(report));
       return clone(report);
+    },
+    listFileRecordsByTenant(tenantId) {
+      return Array.from(fileRecordStore.values())
+        .filter((fileRecord) => fileRecord.tenantId === tenantId)
+        .map((fileRecord) => clone(fileRecord));
+    },
+    getFileRecordById(fileId) {
+      const fileRecord = fileRecordStore.get(fileId);
+      return fileRecord ? clone(fileRecord) : null;
+    },
+    createFileRecord(fileRecord) {
+      if (fileRecordStore.has(fileRecord.id)) throw new Error("File id already exists.");
+      fileRecordStore.set(fileRecord.id, clone(fileRecord));
+      return clone(fileRecord);
+    },
+    saveFileRecord(fileRecord) {
+      if (!fileRecordStore.has(fileRecord.id)) throw new Error("File record not found.");
+      fileRecordStore.set(fileRecord.id, clone(fileRecord));
+      return clone(fileRecord);
+    },
+    finalizeFileRecord({ fileRecord, auditEvent }) {
+      if (!fileRecordStore.has(fileRecord.id)) throw new Error("File record not found.");
+      fileRecordStore.set(fileRecord.id, clone(fileRecord));
+      auditEventStore.push(clone(auditEvent));
+      return clone(fileRecord);
     },
     listAuditEventsByTenant(tenantId) {
       return auditEventStore.filter((event) => event.tenantId === tenantId).map((event) => clone(event));

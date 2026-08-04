@@ -14,6 +14,10 @@ export const POSTGRES_MIGRATIONS = [
   {
     version: "0003_oidc_authorization",
     url: new URL("../../../../infrastructure/migrations/postgres/0003_oidc_authorization.sql", import.meta.url)
+  },
+  {
+    version: "0004_tenant_file_storage",
+    url: new URL("../../../../infrastructure/migrations/postgres/0004_tenant_file_storage.sql", import.meta.url)
   }
 ];
 

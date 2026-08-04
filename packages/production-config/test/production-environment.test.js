@@ -6,6 +6,7 @@ import {
   PRIVATE_PRODUCTION_ENV_VARS,
   PUBLIC_WEB_RUNTIME_ENV_VARS,
   REQUIRED_PRODUCTION_ENV_VARS,
+  SERVER_ONLY_STORAGE_ENV_VARS,
   assertProductionApiEnvironment,
   assertProductionWebEnvironment,
   assertProductionWorkerEnvironment,
@@ -93,6 +94,20 @@ test("unsafe backend settings fail closed", () => {
     })),
     /XYGO_PG_SEED_SYNTHETIC_DATA must not be enabled/
   );
+  for (const [name, value] of [
+    ["XYGO_STORAGE_DRIVER", "local"],
+    ["XYGO_STORAGE_PUBLIC_ACCESS", "public"],
+    ["XYGO_STORAGE_SERVER_SIDE_ENCRYPTION", "none"],
+    ["XYGO_STORAGE_ALLOWED_MIME_TYPES", "image/*"],
+    ["XYGO_STORAGE_SIGNED_URL_TTL_SEC", "901"],
+    ["XYGO_STORAGE_MAX_FILE_BYTES", "262144001"],
+    ["XYGO_STORAGE_SECRET_ACCESS_KEY", "change-me"]
+  ]) {
+    assert.throws(
+      () => assertProductionApiEnvironment(validProductionEnvironment({ [name]: value })),
+      new RegExp(name)
+    );
+  }
 });
 
 test("reserved example hosts and generic placeholder values fail closed", () => {
@@ -212,6 +227,10 @@ test("Postgres pool settings use safe defaults locally and bounded explicit valu
 test("public browser variables and private secrets are explicitly disjoint", () => {
   assert.deepEqual(
     PUBLIC_WEB_RUNTIME_ENV_VARS.filter((name) => PRIVATE_PRODUCTION_ENV_VARS.includes(name)),
+    []
+  );
+  assert.deepEqual(
+    PUBLIC_WEB_RUNTIME_ENV_VARS.filter((name) => SERVER_ONLY_STORAGE_ENV_VARS.includes(name)),
     []
   );
 });

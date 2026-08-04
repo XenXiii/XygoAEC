@@ -223,6 +223,45 @@ for (const kind of KINDS) {
     const eventsB = repository.listAuditEventsByTenant(TENANT_B);
     assert.deepEqual(eventsB.map((event) => event.eventId), ["audit-conf-b1"]);
   });
+
+  test(`[${kind}] file metadata persists tenant scope and audit completion atomically`, () => {
+    const repository = freshRepository(kind);
+    const pending = {
+      id: `file-conf-${kind}`,
+      tenantId: TENANT_A,
+      projectId: SEED_PROJECT_A,
+      fieldReportId: "field-report-commercial-b",
+      fileClass: "report_photo",
+      originalFilename: "conformance.jpg",
+      mimeType: "image/jpeg",
+      sizeBytes: 4,
+      storageKey: `tenants/conformance/files/file-conf-${kind}`,
+      status: "pending_upload",
+      checksumSha256: null,
+      clientVisible: true,
+      retentionUntil: "2027-08-04T00:00:00.000Z",
+      createdAt: "2026-08-04T00:00:00.000Z",
+      updatedAt: "2026-08-04T00:00:00.000Z",
+      deletedAt: null
+    };
+    repository.createFileRecord(pending);
+    assert.equal(repository.getFileRecordById(pending.id).status, "pending_upload");
+    assert.ok(repository.listFileRecordsByTenant(TENANT_A).some((item) => item.id === pending.id));
+    assert.ok(!repository.listFileRecordsByTenant(TENANT_B).some((item) => item.id === pending.id));
+
+    const auditEvent = {
+      eventId: `audit-file-conf-${kind}`,
+      tenantId: TENANT_A,
+      action: "api.file.upload_completed",
+      resourceType: "file_record",
+      resourceId: pending.id,
+      previousHash: null,
+      eventHash: `hash-file-conf-${kind}`
+    };
+    repository.finalizeFileRecord({ fileRecord: { ...pending, status: "ready" }, auditEvent });
+    assert.equal(repository.getFileRecordById(pending.id).status, "ready");
+    assert.ok(repository.listAuditEventsByTenant(TENANT_A).some((event) => event.eventId === auditEvent.eventId));
+  });
 }
 
 test("all backends produce identical results for the same scenario", () => {

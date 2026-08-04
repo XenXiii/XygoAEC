@@ -275,6 +275,38 @@ export function createFileRepository({ filePath }) {
       writeState(filePath, state);
       return cloneState(report);
     },
+    listFileRecordsByTenant(tenantId) {
+      return listByTenant(readState(filePath).fileRecords ?? [], tenantId).map((item) => cloneState(item));
+    },
+    getFileRecordById(fileId) {
+      const fileRecord = (readState(filePath).fileRecords ?? []).find((item) => item.id === fileId);
+      return fileRecord ? cloneState(fileRecord) : null;
+    },
+    createFileRecord(fileRecord) {
+      const state = readState(filePath);
+      state.fileRecords ??= [];
+      if (state.fileRecords.some((item) => item.id === fileRecord.id)) throw new Error("File id already exists.");
+      state.fileRecords.push(cloneState(fileRecord));
+      writeState(filePath, state);
+      return cloneState(fileRecord);
+    },
+    saveFileRecord(fileRecord) {
+      const state = readState(filePath);
+      state.fileRecords ??= [];
+      if (!state.fileRecords.some((item) => item.id === fileRecord.id)) throw new Error("File record not found.");
+      state.fileRecords = replaceById(state.fileRecords, cloneState(fileRecord));
+      writeState(filePath, state);
+      return cloneState(fileRecord);
+    },
+    finalizeFileRecord({ fileRecord, auditEvent }) {
+      const state = readState(filePath);
+      state.fileRecords ??= [];
+      if (!state.fileRecords.some((item) => item.id === fileRecord.id)) throw new Error("File record not found.");
+      state.fileRecords = replaceById(state.fileRecords, cloneState(fileRecord));
+      state.auditEvents.push(cloneState(auditEvent));
+      writeState(filePath, state);
+      return cloneState(fileRecord);
+    },
     listAuditEventsByTenant(tenantId) {
       return readState(filePath).auditEvents.filter((event) => event.tenantId === tenantId);
     },
