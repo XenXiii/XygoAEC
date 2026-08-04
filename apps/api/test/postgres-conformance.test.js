@@ -332,6 +332,105 @@ test("verified OIDC identity resolves tenant and role from canonical Postgres re
   );
 });
 
+test("managed IdP binding activates a provisioned user transactionally", { skip }, async (t) => {
+  const repo = createPostgresRepository({ connectionString: PG_URL });
+  t.after(() => repo.close());
+  const slug = `pg-managed-idp-bind-${process.pid}`;
+  const tenantId = `tenant-${slug}`;
+  const ownerEmail = `owner@${slug}.invalid`;
+  const staffEmail = `staff@${slug}.invalid`;
+  const subject = `managed-subject-${slug}`;
+  await repo.provisionStagedTenant({
+    ...provisioningInput(slug),
+    users: [
+      { email: ownerEmail, displayName: "Managed Owner", role: "client_owner" },
+      { email: staffEmail, displayName: "Managed Staff", role: "client_staff" }
+    ]
+  });
+  assert.deepEqual(await repo.listOidcIdentitiesByTenant(tenantId), []);
+
+  const first = await repo.bindOidcIdentity({
+    tenantId,
+    email: ownerEmail.toUpperCase(),
+    issuer: OIDC_ISSUER,
+    subject,
+    actorId: "activation-operator"
+  });
+  const second = await repo.bindOidcIdentity({
+    tenantId,
+    email: ownerEmail,
+    issuer: OIDC_ISSUER,
+    subject,
+    actorId: "activation-operator"
+  });
+  assert.equal(first.created, true);
+  assert.equal(second.created, false);
+  assert.equal(first.identity.bindingSource, "managed-idp-admin");
+  assert.equal(first.identity.userId, `${tenantId}-user-1`);
+  assert.deepEqual(await repo.resolveOidcAuthorization({ issuer: OIDC_ISSUER, subject }), {
+    status: "active",
+    userId: `${tenantId}-user-1`,
+    tenantId,
+    organizationRole: "client_owner",
+    projectRole: null
+  });
+  assert.equal(
+    (await repo.listAuditEventsByTenant(tenantId)).filter((event) => event.action === "managed_idp.identity_bound").length,
+    1
+  );
+
+  await assert.rejects(
+    () => repo.bindOidcIdentity({
+      tenantId,
+      email: ownerEmail,
+      issuer: OIDC_ISSUER,
+      subject: `${subject}-different`,
+      actorId: "activation-operator"
+    }),
+    (error) => error.code === "oidc_binding_conflict"
+  );
+  await assert.rejects(
+    () => repo.bindOidcIdentity({
+      tenantId,
+      email: staffEmail,
+      issuer: OIDC_ISSUER,
+      subject,
+      actorId: "activation-operator"
+    }),
+    (error) => error.code === "oidc_binding_conflict"
+  );
+  assert.equal((await repo.listOidcIdentitiesByTenant(tenantId)).length, 1);
+});
+
+test("managed IdP binding rolls back identity and audit evidence on failure", { skip }, async (t) => {
+  const slug = `pg-managed-idp-rollback-${process.pid}`;
+  const tenantId = `tenant-${slug}`;
+  const base = createPostgresRepository({ connectionString: PG_URL });
+  t.after(() => base.close());
+  await base.provisionStagedTenant(provisioningInput(slug));
+  const auditCountBefore = (await base.listAuditEventsByTenant(tenantId)).length;
+
+  const failing = createPostgresRepository({
+    connectionString: PG_URL,
+    beforeOidcBindingCommit: async () => {
+      throw new Error("forced OIDC binding failure");
+    }
+  });
+  t.after(() => failing.close());
+  await assert.rejects(
+    () => failing.bindOidcIdentity({
+      tenantId,
+      email: `owner@${slug}.invalid`,
+      issuer: OIDC_ISSUER,
+      subject: `rollback-subject-${slug}`,
+      actorId: "activation-operator"
+    }),
+    /forced OIDC binding failure/
+  );
+  assert.deepEqual(await base.listOidcIdentitiesByTenant(tenantId), []);
+  assert.equal((await base.listAuditEventsByTenant(tenantId)).length, auditCountBefore);
+});
+
 test("postgres provisioning and portal branding/updates remain tenant-scoped", { skip }, async (t) => {
   const repo = createPostgresRepository({ connectionString: PG_URL });
   t.after(() => repo.close());

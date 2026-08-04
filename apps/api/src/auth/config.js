@@ -1,6 +1,14 @@
 import { AuthError } from "./jwt.js";
 
 const SUPPORTED_OIDC_ALGORITHMS = new Set(["RS256", "RS384", "RS512"]);
+const SUPPORTED_OIDC_PROVIDERS = new Set([
+  "auth0",
+  "clerk",
+  "cognito",
+  "entra",
+  "okta",
+  "other-managed-oidc"
+]);
 const MAX_CLOCK_TOLERANCE_SEC = 300;
 
 function normalizedString(value) {
@@ -16,7 +24,7 @@ function parseStagedMode(value) {
   throw new AuthError("config_error", "STAGED_MODE must be true or false.");
 }
 
-function assertHttpsUrl(value, label) {
+function assertHttpsUrl(value, label, { allowQuery = false } = {}) {
   let url;
   try {
     url = new URL(value);
@@ -25,6 +33,12 @@ function assertHttpsUrl(value, label) {
   }
   if (url.protocol !== "https:") {
     throw new AuthError("unsafe_config", `${label} must use HTTPS in production.`);
+  }
+  if (!url.hostname || url.username || url.password || url.hash || (!allowQuery && url.search)) {
+    throw new AuthError(
+      "unsafe_config",
+      `${label} must not contain credentials, a fragment, or unsupported URL components.`
+    );
   }
 }
 
@@ -51,11 +65,14 @@ export function loadAuthConfig(env = process.env) {
   if (mode === "oidc") {
     const issuer = normalizedString(env.XYGO_OIDC_ISSUER);
     const audience = normalizedString(env.XYGO_OIDC_AUDIENCE);
+    const configuredJwksUri = normalizedString(env.XYGO_OIDC_JWKS_URI);
     const configuredAlgorithms = normalizedString(env.XYGO_OIDC_ALLOWED_ALGORITHMS) ?? "RS256";
     config.oidc = {
+      provider: normalizedString(env.XYGO_OIDC_PROVIDER),
       issuer,
       audience,
-      jwksUri: normalizedString(env.XYGO_OIDC_JWKS_URI) ?? (issuer ? `${issuer.replace(/\/$/, "")}/.well-known/jwks.json` : null),
+      jwksUri: configuredJwksUri ?? (issuer ? `${issuer.replace(/\/$/, "")}/.well-known/jwks.json` : null),
+      jwksUriExplicit: Boolean(configuredJwksUri),
       allowedAlgorithms: configuredAlgorithms.split(",").map((value) => value.trim()).filter(Boolean),
       clockToleranceSec: Number(env.XYGO_OIDC_CLOCK_TOLERANCE_SEC ?? 60)
     };
@@ -105,8 +122,20 @@ export function assertAuthConfig(config, { repositoryMode = null } = {}) {
       );
     }
     if (config.productionMode) {
+      if (!config.oidc.provider || !SUPPORTED_OIDC_PROVIDERS.has(config.oidc.provider)) {
+        throw new AuthError(
+          "config_error",
+          `Production OIDC requires XYGO_OIDC_PROVIDER to be one of: ${[...SUPPORTED_OIDC_PROVIDERS].join(", ")}.`
+        );
+      }
+      if (!config.oidc.jwksUriExplicit) {
+        throw new AuthError(
+          "config_error",
+          "Production OIDC requires an explicit XYGO_OIDC_JWKS_URI; an inferred provider endpoint is not accepted."
+        );
+      }
       assertHttpsUrl(config.oidc.issuer, "XYGO_OIDC_ISSUER");
-      assertHttpsUrl(config.oidc.jwksUri, "XYGO_OIDC_JWKS_URI");
+      assertHttpsUrl(config.oidc.jwksUri, "XYGO_OIDC_JWKS_URI", { allowQuery: true });
     }
     if (repositoryMode !== "postgres") {
       throw new AuthError(

@@ -13,6 +13,7 @@
     "start:web": "node apps/web/src/server.js",
     "start:worker": "node apps/worker/src/worker.js",
     "provision:tenant": "node scripts/provision-staged-tenant.mjs",
+    "bind:oidc-user": "node scripts/bind-oidc-user.mjs",
     "migrate:postgres": "node scripts/migrate-postgres.mjs",
     "test": "XYGO_API_REPOSITORY_MODE=memory node --test packages/*/test/**/*.test.js apps/*/test/**/*.test.js",
     "test:staged-mode": "node --test packages/staged-mode/test/**/*.test.js",

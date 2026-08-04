@@ -1,3 +1,5 @@
+import crypto from "node:crypto";
+
 import { createProject } from "../../../../packages/shared-contracts/src/foundation.js";
 import { createCoordinationIssue, createRfi } from "../../../../packages/coordination/src/index.js";
 import { createFinding, createReviewRun, setHumanDisposition } from "../../../../packages/ai-review/src/index.js";
@@ -10,6 +12,33 @@ import { buildStagedTenantProvisioning } from "../../../../packages/activation/s
 import { createSeedState } from "./seed.js";
 import { syntheticTenants } from "../../../../packages/test-fixtures/src/synthetic-tenants.js";
 import { applyPostgresMigrations } from "./postgres-migrations.js";
+
+function requiredString(value, label) {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`${label} is required.`);
+  }
+  return value.trim();
+}
+
+function managedOidcIssuer(value) {
+  const issuer = requiredString(value, "issuer");
+  let url;
+  try {
+    url = new URL(issuer);
+  } catch {
+    throw new Error("issuer must be an absolute HTTPS URL.");
+  }
+  if (url.protocol !== "https:" || !url.hostname || url.username || url.password || url.search || url.hash) {
+    throw new Error("issuer must be an HTTPS URL without credentials, query parameters, or a fragment.");
+  }
+  return issuer;
+}
+
+function oidcBindingConflict(message) {
+  const error = new Error(message);
+  error.code = "oidc_binding_conflict";
+  return error;
+}
 
 // Production Postgres backend. Implements the SAME async repository contract as
 // the other backends. `pg` is imported lazily so this module loads even when the
@@ -40,7 +69,8 @@ export async function runPostgresTransaction(pool, operation) {
 export function createPostgresRepository({
   connectionString,
   auditSigningKey = null,
-  beforeProvisioningCommit = null
+  beforeProvisioningCommit = null,
+  beforeOidcBindingCommit = null
 }) {
   if (!connectionString) {
     throw new Error("connectionString is required for postgres repository.");
@@ -284,6 +314,109 @@ export function createPostgresRepository({
     },
     async listOidcIdentitiesByTenant(tenantId) {
       return payloads(await query("SELECT payload FROM oidc_identities WHERE tenant_id = $1 ORDER BY id", [tenantId]));
+    },
+    async bindOidcIdentity(input) {
+      const tenantId = requiredString(input?.tenantId, "tenantId");
+      const email = requiredString(input?.email, "email").toLowerCase();
+      const issuer = managedOidcIssuer(input?.issuer);
+      const subject = requiredString(input?.subject, "subject");
+      const actorId = requiredString(input?.actorId, "actorId");
+      const p = await pool();
+
+      return runPostgresTransaction(p, async (client) => {
+        // Serialize all contenders for either side of the one-to-one binding.
+        // Sorting the lock keys keeps concurrent cross-bind attempts deadlock-safe.
+        const lockKeys = [`oidc-email:${tenantId}:${email}`, `oidc-subject:${issuer}:${subject}`].sort();
+        for (const lockKey of lockKeys) {
+          await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [lockKey]);
+        }
+
+        const userResult = await client.query(
+          "SELECT u.id, u.tenant_id, u.email, u.status, t.status AS tenant_status, r.role " +
+            "FROM users u " +
+            "JOIN tenants t ON t.id = u.tenant_id " +
+            "JOIN role_assignments r ON r.user_id = u.id AND r.tenant_id = u.tenant_id " +
+            "WHERE u.tenant_id = $1 AND lower(u.email) = $2",
+          [tenantId, email]
+        );
+        if (userResult.rows.length === 0) {
+          throw new Error(`No provisioned user ${email} exists in tenant ${tenantId}.`);
+        }
+        if (userResult.rows.length !== 1) {
+          throw oidcBindingConflict(`Provisioned user ${email} has an ambiguous role assignment.`);
+        }
+        const user = userResult.rows[0];
+        if (user.status !== "active" || user.tenant_status !== "active") {
+          throw new Error("OIDC identities can only be bound to active users in active tenants.");
+        }
+
+        const existing = await client.query(
+          "SELECT id, issuer, subject, tenant_id, user_id, payload FROM oidc_identities " +
+            "WHERE (tenant_id = $1 AND user_id = $2) OR (issuer = $3 AND subject = $4) FOR UPDATE",
+          [tenantId, user.id, issuer, subject]
+        );
+        const exact = existing.rows.find((row) =>
+          row.tenant_id === tenantId && row.user_id === user.id && row.issuer === issuer && row.subject === subject
+        );
+        if (exact && existing.rows.length === 1) {
+          return { created: false, identity: exact.payload };
+        }
+        if (existing.rows.length > 0) {
+          throw oidcBindingConflict(
+            "OIDC subject or provisioned user is already bound to a different canonical identity."
+          );
+        }
+
+        const boundAt = new Date().toISOString();
+        const identityId = `oidc-${crypto.createHash("sha256").update(`${issuer}\0${subject}`).digest("hex").slice(0, 32)}`;
+        const identity = {
+          id: identityId,
+          tenantId,
+          userId: user.id,
+          issuer,
+          subject,
+          bindingSource: "managed-idp-admin",
+          boundAt,
+          staged: true
+        };
+        await client.query(
+          "INSERT INTO oidc_identities (id, issuer, subject, tenant_id, user_id, payload) VALUES ($1,$2,$3,$4,$5,$6)",
+          [identity.id, issuer, subject, tenantId, user.id, identity]
+        );
+
+        // Bindings are authorization changes. Record them in the same transaction
+        // and extend the tenant audit chain before making the identity usable.
+        await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`audit:${tenantId}`]);
+        const previousAudit = await client.query(
+          "SELECT payload FROM audit_events WHERE tenant_id = $1 ORDER BY seq DESC LIMIT 1",
+          [tenantId]
+        );
+        const auditEvent = createAuditEvent({
+          eventId: `${identity.id}-bound-audit`,
+          tenantId,
+          actorType: "user",
+          actorId,
+          action: "managed_idp.identity_bound",
+          resourceType: "oidc_identity",
+          resourceId: identity.id,
+          afterStateRef: { userId: user.id, issuer },
+          correlationId: identity.id,
+          requestId: identity.id,
+          timestamp: boundAt,
+          previousHash: previousAudit.rows[0]?.payload?.eventHash ?? null,
+          signingKey: auditSigningKey
+        });
+        await client.query(
+          "INSERT INTO audit_events (event_id, tenant_id, action, resource_type, resource_id, previous_hash, event_hash, signature, payload) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+          [auditEvent.eventId, tenantId, auditEvent.action, auditEvent.resourceType, auditEvent.resourceId, auditEvent.previousHash, auditEvent.eventHash, auditEvent.signature ?? null, auditEvent]
+        );
+
+        if (beforeOidcBindingCommit) {
+          await beforeOidcBindingCommit({ client, identity, auditEvent });
+        }
+
+        return { created: true, identity };
+      });
     },
     async resolveOidcAuthorization({ issuer, subject }) {
       const result = await query(

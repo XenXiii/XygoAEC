@@ -305,8 +305,10 @@ test("production auth configuration fails closed", () => {
   const insecureIssuer = loadAuthConfig({
     NODE_ENV: "production",
     XYGO_AUTH_MODE: "oidc",
+    XYGO_OIDC_PROVIDER: "auth0",
     XYGO_OIDC_ISSUER: "http://issuer.example.com/",
-    XYGO_OIDC_AUDIENCE: AUDIENCE
+    XYGO_OIDC_AUDIENCE: AUDIENCE,
+    XYGO_OIDC_JWKS_URI: "https://issuer.example.com/.well-known/jwks.json"
   });
   assert.throws(
     () => assertAuthConfig(insecureIssuer, { repositoryMode: "postgres" }),
@@ -316,6 +318,7 @@ test("production auth configuration fails closed", () => {
   const insecureJwks = loadAuthConfig({
     NODE_ENV: "production",
     XYGO_AUTH_MODE: "oidc",
+    XYGO_OIDC_PROVIDER: "auth0",
     XYGO_OIDC_ISSUER: ISSUER,
     XYGO_OIDC_AUDIENCE: AUDIENCE,
     XYGO_OIDC_JWKS_URI: "http://keys.example.com/jwks.json"
@@ -329,10 +332,38 @@ test("production auth configuration fails closed", () => {
     NODE_ENV: "production",
     STAGED_MODE: "false",
     XYGO_AUTH_MODE: "oidc",
+    XYGO_OIDC_PROVIDER: "auth0",
+    XYGO_OIDC_ISSUER: ISSUER,
+    XYGO_OIDC_AUDIENCE: AUDIENCE,
+    XYGO_OIDC_JWKS_URI: "https://issuer.example.com/.well-known/jwks.json"
+  });
+  assert.doesNotThrow(() => assertAuthConfig(secureProduction, { repositoryMode: "postgres" }));
+});
+
+test("production OIDC requires an explicit managed provider and JWKS endpoint", () => {
+  const missingProvider = loadAuthConfig({
+    NODE_ENV: "production",
+    XYGO_AUTH_MODE: "oidc",
+    XYGO_OIDC_ISSUER: ISSUER,
+    XYGO_OIDC_AUDIENCE: AUDIENCE,
+    XYGO_OIDC_JWKS_URI: "https://issuer.example.com/.well-known/jwks.json"
+  });
+  assert.throws(
+    () => assertAuthConfig(missingProvider, { repositoryMode: "postgres" }),
+    (error) => error.code === "config_error" && /XYGO_OIDC_PROVIDER/.test(error.message)
+  );
+
+  const inferredJwks = loadAuthConfig({
+    NODE_ENV: "production",
+    XYGO_AUTH_MODE: "oidc",
+    XYGO_OIDC_PROVIDER: "auth0",
     XYGO_OIDC_ISSUER: ISSUER,
     XYGO_OIDC_AUDIENCE: AUDIENCE
   });
-  assert.doesNotThrow(() => assertAuthConfig(secureProduction, { repositoryMode: "postgres" }));
+  assert.throws(
+    () => assertAuthConfig(inferredJwks, { repositoryMode: "postgres" }),
+    (error) => error.code === "config_error" && /explicit XYGO_OIDC_JWKS_URI/.test(error.message)
+  );
 });
 
 test("OIDC startup rejects unsafe verification settings", () => {
