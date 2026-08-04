@@ -13,6 +13,7 @@ import { createRateLimiter } from "./http/rate-limit.js";
 import { createMetrics } from "./telemetry/metrics.js";
 import { rootLogger } from "./telemetry/logger.js";
 import { assertStagedMode } from "../../../packages/staged-mode/src/index.js";
+import { assertProductionApiEnvironment } from "../../../packages/production-config/src/index.js";
 
 function sendJson(res, status, body, extraHeaders = {}) {
   if (res.headersSent) {
@@ -37,6 +38,7 @@ export function createServer({
   repository: injectedRepository = null,
   jwks: injectedJwks = null
 } = {}) {
+  assertProductionApiEnvironment(env);
   const authConfig = loadAuthConfig(env);
   const repositoryMode = env.XYGO_API_REPOSITORY_MODE ?? "sqlite";
   assertAuthConfig(authConfig, { repositoryMode });
@@ -196,7 +198,8 @@ export function createServer({
             body,
             repository,
             principal,
-            authConfig
+            authConfig,
+            auditSigningKey: env.XYGO_AUDIT_SIGNING_KEY ?? null
           });
           sendJson(res, result.status, result.body, result.headers);
         })

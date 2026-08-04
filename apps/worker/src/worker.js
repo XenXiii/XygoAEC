@@ -1,5 +1,6 @@
 import { processOutboxOnce, sharedOutbox } from "../../api/src/reliability/outbox.js";
 import { rootLogger } from "../../api/src/telemetry/logger.js";
+import { assertProductionWorkerEnvironment } from "../../../packages/production-config/src/index.js";
 
 // Staged delivery handler: NO external side effects (guardrail). "Delivery" is a
 // structured log line. Swap for a real dispatcher once external adapters are
@@ -18,13 +19,18 @@ export function createStagedDeliveryHandler(logger = rootLogger) {
 }
 
 export function createWorker({
+  env = process.env,
   store = sharedOutbox,
   handler,
-  intervalMs = 1000,
+  intervalMs,
   logger = rootLogger,
-  maxAttempts = 5,
-  baseBackoffMs = 1000
+  maxAttempts,
+  baseBackoffMs
 } = {}) {
+  assertProductionWorkerEnvironment(env);
+  const configuredIntervalMs = intervalMs ?? Number(env.XYGO_WORKER_INTERVAL_MS ?? 1000);
+  const configuredMaxAttempts = maxAttempts ?? Number(env.XYGO_WORKER_MAX_ATTEMPTS ?? 5);
+  const configuredBaseBackoffMs = baseBackoffMs ?? Number(env.XYGO_WORKER_BASE_BACKOFF_MS ?? 1000);
   const deliver = handler ?? createStagedDeliveryHandler(logger);
   const processed = new Set();
   let timer = null;
@@ -34,7 +40,14 @@ export function createWorker({
     if (stopping) {
       return { processed: 0, retried: 0, dead: 0 };
     }
-    const result = await processOutboxOnce({ store, handler: deliver, now, maxAttempts, baseBackoffMs, processed });
+    const result = await processOutboxOnce({
+      store,
+      handler: deliver,
+      now,
+      maxAttempts: configuredMaxAttempts,
+      baseBackoffMs: configuredBaseBackoffMs,
+      processed
+    });
     if (result.processed || result.retried || result.dead) {
       logger.info("outbox.tick", result);
     }
@@ -46,9 +59,9 @@ export function createWorker({
     start() {
       timer = setInterval(() => {
         tick().catch((error) => logger.error("outbox.tick_failed", { error: String(error?.message ?? error) }));
-      }, intervalMs);
+      }, configuredIntervalMs);
       // Note: not unref'd — the standalone worker process must stay alive.
-      logger.info("worker.started", { intervalMs });
+      logger.info("worker.started", { intervalMs: configuredIntervalMs });
       return this;
     },
     async stop() {
@@ -62,7 +75,7 @@ export function createWorker({
 }
 
 if (process.argv[1] && process.argv[1].endsWith("/worker.js")) {
-  const worker = createWorker({ intervalMs: Number(process.env.XYGO_WORKER_INTERVAL_MS ?? 1000) }).start();
+  const worker = createWorker().start();
   const shutdown = async () => {
     await worker.stop();
     process.exit(0);

@@ -25,6 +25,7 @@ fails startup unless managed OIDC public-client endpoints, app/API HTTPS URLs, i
 client ID are configured. It rejects browser client secrets and fixes the login contract to
 Authorization Code + PKCE `S256` with access tokens held in memory.
 
-See [`config/managed-idp.env.example`](../../config/managed-idp.env.example) and
-[`docs/activation/managed-idp-runtime.md`](../../docs/activation/managed-idp-runtime.md). The actual
-authenticated login/callback UI is intentionally deferred to the web/PWA release-surface slice.
+See [`config/production.env.example`](../../config/production.env.example), the
+[`production environment gate`](../../docs/operations/production-environment-gate.md), and the
+[`managed IdP runtime contract`](../../docs/activation/managed-idp-runtime.md). The actual authenticated
+login/callback UI is intentionally deferred to the web/PWA release-surface slice.

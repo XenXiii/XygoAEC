@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { createStaticJwks } from "../src/auth/jwks.js";
 import { createPostgresRepository } from "../src/repositories/postgres.js";
 import { createServer } from "../src/server.js";
+import { validProductionEnvironment } from "../../../packages/production-config/test/fixtures.js";
 
 const PG_URL = process.env.XYGO_TEST_PG_URL;
 const requirePostgres = process.env.XYGO_REQUIRE_PG_TESTS === "true";
@@ -13,7 +14,7 @@ if (requirePostgres && !PG_URL) {
 }
 const skip = PG_URL ? false : "set XYGO_TEST_PG_URL to run the paid-client activation E2E test";
 
-const OIDC_ISSUER = "https://issuer.activation-e2e.test/";
+const OIDC_ISSUER = "https://issuer.activation-e2e.xygoaec.com/";
 const OIDC_AUDIENCE = "xygo-api";
 const OIDC_KID = "activation-e2e-key";
 const { publicKey, privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -104,8 +105,17 @@ test("paid-client activation works end to end through OIDC, HTTP, and canonical 
     staff: `beta-staff-${nonce}`,
     viewer: `beta-viewer-${nonce}`
   };
+  const runtimeEnv = validProductionEnvironment({
+    XYGO_OIDC_PROVIDER: "other-managed-oidc",
+    XYGO_OIDC_ISSUER: OIDC_ISSUER,
+    XYGO_OIDC_AUDIENCE: OIDC_AUDIENCE,
+    XYGO_OIDC_JWKS_URI: "https://issuer.activation-e2e.xygoaec.com/.well-known/jwks.json"
+  });
 
-  const repository = createPostgresRepository({ connectionString: PG_URL });
+  const repository = createPostgresRepository({
+    connectionString: PG_URL,
+    auditSigningKey: runtimeEnv.XYGO_AUDIT_SIGNING_KEY
+  });
   const pg = (await import("pg")).default;
   const adminPool = new pg.Pool({ connectionString: PG_URL });
   let server = null;
@@ -133,17 +143,7 @@ test("paid-client activation works end to end through OIDC, HTTP, and canonical 
   }));
 
   server = createServer({
-    env: {
-      NODE_ENV: "production",
-      STAGED_MODE: "false",
-      XYGO_AUTH_MODE: "oidc",
-      XYGO_OIDC_PROVIDER: "other-managed-oidc",
-      XYGO_API_REPOSITORY_MODE: "postgres",
-      XYGO_API_PG_URL: PG_URL,
-      XYGO_OIDC_ISSUER: OIDC_ISSUER,
-      XYGO_OIDC_AUDIENCE: OIDC_AUDIENCE,
-      XYGO_OIDC_JWKS_URI: "https://issuer.activation-e2e.test/.well-known/jwks.json"
-    },
+    env: runtimeEnv,
     repository,
     jwks: createStaticJwks([publicJwk]),
     logger: { info() {} }
@@ -248,6 +248,12 @@ test("paid-client activation works end to end through OIDC, HTTP, and canonical 
   assert.equal(audit.status, 200);
   assert.ok(audit.body.items.some((event) => event.action === "staged_tenant.provisioned"));
   assert.ok(audit.body.items.some((event) => event.action === "api.field_report.created"));
+  assert.ok(audit.body.items.every((event) => typeof event.signature === "string" && event.signature.length > 0));
+  const auditVerification = await request(`/v1/tenants/${alphaTenantId}/audit-events/verify`, {
+    token: signToken(alphaSubjects.owner)
+  });
+  assert.equal(auditVerification.status, 200);
+  assert.equal(auditVerification.body.item.valid, true);
   const provisioningEvents = await repository.listProvisioningEventsByTenant(alphaTenantId);
   assert.equal(provisioningEvents.length, 1);
   assert.equal(provisioningEvents[0].action, "staged_tenant.provisioned");
