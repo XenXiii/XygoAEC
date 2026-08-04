@@ -48,7 +48,11 @@ export function validProductionEnvironment(overrides = {}) {
     XYGO_WORKER_INTERVAL_MS: "1000",
     XYGO_WORKER_MAX_ATTEMPTS: "5",
     XYGO_WORKER_BASE_BACKOFF_MS: "1000",
+    XYGO_WORKER_MAX_BACKOFF_MS: "900000",
     XYGO_WORKER_CONCURRENCY: "4",
+    XYGO_WORKER_STALE_AFTER_MS: "60000",
+    XYGO_WORKER_SHUTDOWN_TIMEOUT_MS: "30000",
+    XYGO_WORKER_MAX_DEAD_JOBS: "0",
     XYGO_MONITORING_OTLP_ENDPOINT: "https://telemetry.production.xygoaec.com/v1",
     XYGO_MONITORING_AUTH_TOKEN: "monitoring-token-at-least-16-characters",
     ...overrides

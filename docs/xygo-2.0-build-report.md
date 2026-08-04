@@ -103,6 +103,6 @@ placeholder (no amount, no action); server refuses to boot in an unsafe auth con
 ## Deferred to activation (not built — from the production-readiness audit)
 
 Real tenant authn/authz (OIDC wiring), secret management, distributed tracing + dashboards +
-alerting, cross-process durable outbox (Postgres table), the Postgres cutover, and a real AI model
+alerting/provider wiring, a managed deployment of the implemented PostgreSQL outbox, and a real AI model
 runtime to replace the deterministic simulations. See
 `docs/audit/phase-0-production-readiness-audit.md`.

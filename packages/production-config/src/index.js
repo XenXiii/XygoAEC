@@ -12,11 +12,15 @@ const RESERVED_PRODUCTION_HOST_SUFFIXES = Object.freeze([
   ".example.net",
   ".example.org"
 ]);
-const WORKER_NUMERIC_LIMITS = Object.freeze({
+export const WORKER_NUMERIC_LIMITS = Object.freeze({
   XYGO_WORKER_INTERVAL_MS: { minimum: 100, maximum: 60_000 },
   XYGO_WORKER_MAX_ATTEMPTS: { minimum: 1, maximum: 20 },
   XYGO_WORKER_BASE_BACKOFF_MS: { minimum: 100, maximum: 900_000 },
-  XYGO_WORKER_CONCURRENCY: { minimum: 1, maximum: 64 }
+  XYGO_WORKER_MAX_BACKOFF_MS: { minimum: 100, maximum: 86_400_000 },
+  XYGO_WORKER_CONCURRENCY: { minimum: 1, maximum: 64 },
+  XYGO_WORKER_STALE_AFTER_MS: { minimum: 1_000, maximum: 3_600_000 },
+  XYGO_WORKER_SHUTDOWN_TIMEOUT_MS: { minimum: 1_000, maximum: 120_000 },
+  XYGO_WORKER_MAX_DEAD_JOBS: { minimum: 0, maximum: 100_000 }
 });
 export const POSTGRES_POOL_ENVIRONMENT = Object.freeze({
   XYGO_PG_POOL_MAX: { option: "max", defaultValue: 10, minimum: 1, maximum: 50 },
@@ -77,6 +81,11 @@ export const SERVER_ONLY_STORAGE_ENV_VARS = Object.freeze([
   "XYGO_STORAGE_ALLOWED_MIME_TYPES",
   "XYGO_STORAGE_SIGNED_URL_TTL_SEC",
   "XYGO_STORAGE_RETENTION_DAYS"
+]);
+
+export const SERVER_ONLY_OUTBOX_ENV_VARS = Object.freeze([
+  "XYGO_OUTBOX_BACKEND",
+  ...Object.keys(WORKER_NUMERIC_LIMITS)
 ]);
 
 const API_REQUIRED_ENV_VARS = Object.freeze([
@@ -159,7 +168,11 @@ const WORKER_REQUIRED_ENV_VARS = Object.freeze([
   "XYGO_WORKER_INTERVAL_MS",
   "XYGO_WORKER_MAX_ATTEMPTS",
   "XYGO_WORKER_BASE_BACKOFF_MS",
+  "XYGO_WORKER_MAX_BACKOFF_MS",
   "XYGO_WORKER_CONCURRENCY",
+  "XYGO_WORKER_STALE_AFTER_MS",
+  "XYGO_WORKER_SHUTDOWN_TIMEOUT_MS",
+  "XYGO_WORKER_MAX_DEAD_JOBS",
   "XYGO_MONITORING_OTLP_ENDPOINT",
   "XYGO_MONITORING_AUTH_TOKEN"
 ]);
@@ -300,6 +313,41 @@ export function postgresPoolOptionsFromEnvironment(env = {}) {
   return options;
 }
 
+export function workerRuntimeOptionsFromEnvironment(env = {}) {
+  const defaults = {
+    XYGO_WORKER_INTERVAL_MS: 1000,
+    XYGO_WORKER_MAX_ATTEMPTS: 5,
+    XYGO_WORKER_BASE_BACKOFF_MS: 1000,
+    XYGO_WORKER_MAX_BACKOFF_MS: 900_000,
+    XYGO_WORKER_CONCURRENCY: 4,
+    XYGO_WORKER_STALE_AFTER_MS: 60_000,
+    XYGO_WORKER_SHUTDOWN_TIMEOUT_MS: 30_000,
+    XYGO_WORKER_MAX_DEAD_JOBS: 0
+  };
+  const values = {};
+  for (const [name, bounds] of Object.entries(WORKER_NUMERIC_LIMITS)) {
+    const raw = normalizedString(env[name]) ?? String(defaults[name]);
+    const value = Number(raw);
+    if (!/^\d+$/.test(raw) || !Number.isSafeInteger(value) || value < bounds.minimum || value > bounds.maximum) {
+      throw new Error(`Worker configuration error: ${name} must be an integer between ${bounds.minimum} and ${bounds.maximum}.`);
+    }
+    values[name] = value;
+  }
+  if (values.XYGO_WORKER_MAX_BACKOFF_MS < values.XYGO_WORKER_BASE_BACKOFF_MS) {
+    throw new Error("Worker configuration error: XYGO_WORKER_MAX_BACKOFF_MS must be greater than or equal to XYGO_WORKER_BASE_BACKOFF_MS.");
+  }
+  return {
+    intervalMs: values.XYGO_WORKER_INTERVAL_MS,
+    maxAttempts: values.XYGO_WORKER_MAX_ATTEMPTS,
+    baseBackoffMs: values.XYGO_WORKER_BASE_BACKOFF_MS,
+    maxBackoffMs: values.XYGO_WORKER_MAX_BACKOFF_MS,
+    concurrency: values.XYGO_WORKER_CONCURRENCY,
+    staleAfterMs: values.XYGO_WORKER_STALE_AFTER_MS,
+    shutdownTimeoutMs: values.XYGO_WORKER_SHUTDOWN_TIMEOUT_MS,
+    maxDeadJobs: values.XYGO_WORKER_MAX_DEAD_JOBS
+  };
+}
+
 function requireEmail(env, service) {
   const value = normalizedString(env.XYGO_EMAIL_FROM);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value ?? "")) {
@@ -400,5 +448,8 @@ export function assertProductionWorkerEnvironment(env = process.env) {
   assertBackendServices(env, "worker");
   for (const [name, bounds] of Object.entries(WORKER_NUMERIC_LIMITS)) {
     requireInteger(env, name, "worker", bounds);
+  }
+  if (Number(env.XYGO_WORKER_MAX_BACKOFF_MS) < Number(env.XYGO_WORKER_BASE_BACKOFF_MS)) {
+    fail("worker", "XYGO_WORKER_MAX_BACKOFF_MS must be greater than or equal to XYGO_WORKER_BASE_BACKOFF_MS.");
   }
 }

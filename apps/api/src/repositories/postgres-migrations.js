@@ -18,6 +18,10 @@ export const POSTGRES_MIGRATIONS = [
   {
     version: "0004_tenant_file_storage",
     url: new URL("../../../../infrastructure/migrations/postgres/0004_tenant_file_storage.sql", import.meta.url)
+  },
+  {
+    version: "0005_durable_outbox",
+    url: new URL("../../../../infrastructure/migrations/postgres/0005_durable_outbox.sql", import.meta.url)
   }
 ];
 

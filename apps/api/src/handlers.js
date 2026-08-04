@@ -13,7 +13,7 @@ import { resolveStagedPrincipal } from "./auth/principal.js";
 import { generateReportDraft, setReviewStatus, toClientView } from "../../../packages/field-reporting/src/index.js";
 import { buildClientPortalView } from "../../../packages/client-portal/src/index.js";
 import { baseResponseHeaders } from "./http/headers.js";
-import { sharedOutbox } from "./reliability/outbox.js";
+import { enqueueOutboxEvent, sharedOutbox } from "./reliability/outbox.js";
 import { createIdempotencyStore, idempotencyKeyFor } from "./reliability/idempotency.js";
 import {
   createPendingFileRecord,
@@ -605,28 +605,34 @@ async function handleCollectionCreate({ resource, body, tenantId, actorId, repos
   }
 
   try {
-    const created = await resource.create(repository, resource.build(parsed, tenantId));
-
-    await appendTenantAuditEvent({
-      repository,
-      tenantId,
-      actorId,
-      action: resource.audit.action,
-      resourceType: resource.audit.resourceType,
-      resourceId: created.id,
-      afterStateRef: resource.audit.afterStateRef(created),
-      signingKey: auditSigningKey
-    });
-
-    // Enqueue a durable domain event for async processing (worker drains it).
-    outbox.enqueue(
-      createOutboxEvent({
+    let created;
+    const persist = async () => {
+      created = await resource.create(repository, resource.build(parsed, tenantId));
+      await appendTenantAuditEvent({
+        repository,
+        tenantId,
+        actorId,
+        action: resource.audit.action,
+        resourceType: resource.audit.resourceType,
+        resourceId: created.id,
+        afterStateRef: resource.audit.afterStateRef(created),
+        signingKey: auditSigningKey
+      });
+      const outboxEvent = createOutboxEvent({
         eventType: resource.audit.action,
         aggregateType: resource.audit.resourceType,
         aggregateId: created.id,
         tenantId
-      })
-    );
+      });
+      const idempotencyKey = `${tenantId}:${resource.audit.action}:${created.id}`;
+      if (repository.supportsTransactionalOutbox) {
+        await repository.enqueueOutboxEvent(outboxEvent, { idempotencyKey });
+      } else {
+        await enqueueOutboxEvent(outbox, outboxEvent, { idempotencyKey });
+      }
+    };
+    if (repository.supportsTransactionalOutbox) await repository.runTransaction(persist);
+    else await persist();
 
     return json(201, {
       item: created,
@@ -714,6 +720,19 @@ async function routeApiRequest({
     });
   }
 
+  const enqueueTenantOutbox = (action, resourceType, resourceId, idempotencyScope = null) => {
+    const event = createOutboxEvent({
+      eventType: action,
+      aggregateType: resourceType,
+      aggregateId: resourceId,
+      tenantId
+    });
+    const idempotencyKey = [tenantId, action, resourceId, idempotencyScope].filter(Boolean).join(":");
+    return repository.supportsTransactionalOutbox
+      ? repository.enqueueOutboxEvent(event, { idempotencyKey })
+      : enqueueOutboxEvent(outbox, event, { idempotencyKey });
+  };
+
   const canReadFile = (fileRecord) => {
     if (!fileRecord || fileRecord.tenantId !== tenantId || fileRecord.status === "deleted") return notFound("File not found.");
     const denied = authorize({ principal: effectivePrincipal, tenantId, resource: "file_record", action: "read" });
@@ -722,6 +741,20 @@ async function routeApiRequest({
       return notFound("File not found.");
     }
     return null;
+  };
+
+  const fileOutboxEvent = (action, fileId) => createOutboxEvent({
+    eventType: action,
+    aggregateType: "file_record",
+    aggregateId: fileId,
+    tenantId
+  });
+  const enqueueFileOutbox = (action, fileId) => {
+    const event = fileOutboxEvent(action, fileId);
+    const idempotencyKey = `${tenantId}:${action}:${fileId}`;
+    return repository.supportsTransactionalOutbox
+      ? repository.enqueueOutboxEvent(event, { idempotencyKey })
+      : enqueueOutboxEvent(outbox, event, { idempotencyKey });
   };
 
   const completeFileUpload = async (fileRecord) => {
@@ -748,7 +781,12 @@ async function routeApiRequest({
       afterStateRef: completed.checksumSha256 ? `sha256:${completed.checksumSha256}` : "ready",
       signingKey: auditSigningKey
     });
-    await repository.finalizeFileRecord({ fileRecord: completed, auditEvent: event });
+    const outboxEvent = fileOutboxEvent("api.file.upload_completed", completed.id);
+    const outboxIdempotencyKey = `${tenantId}:api.file.upload_completed:${completed.id}`;
+    await repository.finalizeFileRecord({ fileRecord: completed, auditEvent: event, outboxEvent, outboxIdempotencyKey });
+    if (!repository.supportsTransactionalOutbox) {
+      await enqueueOutboxEvent(outbox, outboxEvent, { idempotencyKey: outboxIdempotencyKey });
+    }
     return json(200, { item: publicFileMetadata(completed), staged: true });
   };
 
@@ -813,7 +851,14 @@ async function routeApiRequest({
         const denied = authorize({ principal: effectivePrincipal, tenantId, resource: "file_record", action: "update" });
         if (denied) return denied;
         if (!fileRecord || fileRecord.tenantId !== tenantId) return notFound("File not found.");
-        if (fileRecord.status === "ready") return json(200, { item: publicFileMetadata(fileRecord), staged: true });
+        if (fileRecord.status === "ready") {
+          try {
+            await enqueueFileOutbox("api.file.upload_completed", fileRecord.id);
+          } catch {
+            return unavailable("outbox_unavailable", "File is ready but its durable outbox event is still pending; retry completion.");
+          }
+          return json(200, { item: publicFileMetadata(fileRecord), staged: true });
+        }
         if (fileRecord.status !== "pending_upload") return badRequest("File is not awaiting upload completion.");
         try {
           return await completeFileUpload(fileRecord);
@@ -873,7 +918,14 @@ async function routeApiRequest({
         const denied = authorize({ principal: effectivePrincipal, tenantId, resource: "file_record", action: "delete" });
         if (denied) return denied;
         if (!fileRecord || fileRecord.tenantId !== tenantId) return notFound("File not found.");
-        if (fileRecord.status === "deleted") return json(200, { item: publicFileMetadata(fileRecord), staged: true });
+        if (fileRecord.status === "deleted") {
+          try {
+            await enqueueFileOutbox("api.file.deleted", fileRecord.id);
+          } catch {
+            return unavailable("outbox_unavailable", "File is deleted but its durable outbox event is still pending; retry deletion.");
+          }
+          return json(200, { item: publicFileMetadata(fileRecord), staged: true });
+        }
         const previous = fileRecord;
         const deleting = { ...fileRecord, status: "deleting", updatedAt: new Date().toISOString() };
         try {
@@ -899,7 +951,12 @@ async function routeApiRequest({
             afterStateRef: "deleted",
             signingKey: auditSigningKey
           });
-          await repository.finalizeFileRecord({ fileRecord: deleted, auditEvent: event });
+          const outboxEvent = fileOutboxEvent("api.file.deleted", deleted.id);
+          const outboxIdempotencyKey = `${tenantId}:api.file.deleted:${deleted.id}`;
+          await repository.finalizeFileRecord({ fileRecord: deleted, auditEvent: event, outboxEvent, outboxIdempotencyKey });
+          if (!repository.supportsTransactionalOutbox) {
+            await enqueueOutboxEvent(outbox, outboxEvent, { idempotencyKey: outboxIdempotencyKey });
+          }
           return json(200, { item: publicFileMetadata(deleted), staged: true });
         } catch {
           return unavailable(
@@ -989,18 +1046,24 @@ async function routeApiRequest({
     }
 
     try {
-      const drafted = await repository.saveFieldReport(generateReportDraft(report));
-      await appendTenantAuditEvent({
-        repository,
-        tenantId,
-        actorId: effectivePrincipal.userId,
-        action: "api.field_report.draft_generated",
-        resourceType: "field_report",
-        resourceId: drafted.id,
-        beforeStateRef: report.status,
-        afterStateRef: drafted.status,
-        signingKey: auditSigningKey
-      });
+      let drafted;
+      const persist = async () => {
+        drafted = await repository.saveFieldReport(generateReportDraft(report));
+        await appendTenantAuditEvent({
+          repository,
+          tenantId,
+          actorId: effectivePrincipal.userId,
+          action: "api.field_report.draft_generated",
+          resourceType: "field_report",
+          resourceId: drafted.id,
+          beforeStateRef: report.status,
+          afterStateRef: drafted.status,
+          signingKey: auditSigningKey
+        });
+        await enqueueTenantOutbox("api.field_report.draft_generated", "field_report", drafted.id);
+      };
+      if (repository.supportsTransactionalOutbox) await repository.runTransaction(persist);
+      else await persist();
       return json(200, { item: drafted, staged: true });
     } catch (error) {
       return badRequest(error.message);
@@ -1028,23 +1091,29 @@ async function routeApiRequest({
     }
 
     try {
-      const reviewed = await repository.saveFieldReport(
-        setReviewStatus(report, parsed.nextStatus, {
-          reviewedBy: parsed.reviewedBy ?? effectivePrincipal.userId,
-          reviewNote: parsed.reviewNote ?? null
-        })
-      );
-      await appendTenantAuditEvent({
-        repository,
-        tenantId,
-        actorId: effectivePrincipal.userId,
-        action: "api.field_report.reviewed",
-        resourceType: "field_report",
-        resourceId: reviewed.id,
-        beforeStateRef: report.status,
-        afterStateRef: reviewed.status,
-        signingKey: auditSigningKey
-      });
+      let reviewed;
+      const persist = async () => {
+        reviewed = await repository.saveFieldReport(
+          setReviewStatus(report, parsed.nextStatus, {
+            reviewedBy: parsed.reviewedBy ?? effectivePrincipal.userId,
+            reviewNote: parsed.reviewNote ?? null
+          })
+        );
+        await appendTenantAuditEvent({
+          repository,
+          tenantId,
+          actorId: effectivePrincipal.userId,
+          action: "api.field_report.reviewed",
+          resourceType: "field_report",
+          resourceId: reviewed.id,
+          beforeStateRef: report.status,
+          afterStateRef: reviewed.status,
+          signingKey: auditSigningKey
+        });
+        await enqueueTenantOutbox("api.field_report.reviewed", "field_report", reviewed.id, reviewed.status);
+      };
+      if (repository.supportsTransactionalOutbox) await repository.runTransaction(persist);
+      else await persist();
       return json(200, { item: reviewed, staged: true });
     } catch (error) {
       return badRequest(error.message);

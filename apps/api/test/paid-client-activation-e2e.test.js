@@ -3,6 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createStaticJwks } from "../src/auth/jwks.js";
+import { createPostgresOutboxStore } from "../src/reliability/outbox.js";
 import { createPostgresRepository } from "../src/repositories/postgres.js";
 import { createServer, listenWhenReady } from "../src/server.js";
 import { validProductionEnvironment } from "../../../packages/production-config/test/fixtures.js";
@@ -112,6 +113,7 @@ test("paid-client activation works end to end through OIDC, HTTP, and canonical 
     auditSigningKey: runtimeEnv.XYGO_AUDIT_SIGNING_KEY,
     seedSyntheticData: true
   });
+  const outbox = createPostgresOutboxStore({ connectionString: PG_URL });
   const pg = (await import("pg")).default;
   const adminPool = new pg.Pool({ connectionString: PG_URL });
   let server = null;
@@ -119,6 +121,7 @@ test("paid-client activation works end to end through OIDC, HTTP, and canonical 
     if (server?.listening) {
       await closeServer(server);
     }
+    await outbox.close();
     await repository.close();
     await adminPool.end();
   });
@@ -141,6 +144,7 @@ test("paid-client activation works end to end through OIDC, HTTP, and canonical 
   server = createServer({
     env: runtimeEnv,
     repository,
+    outbox,
     jwks: createStaticJwks([publicJwk]),
     logger: { info() {} }
   });

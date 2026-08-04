@@ -60,7 +60,25 @@ test("ready probe returns 503 when the database becomes unavailable", async () =
   assert.equal(response.status, 503);
   assert.deepEqual(response.body, {
     ready: false,
-    reason: "database_not_ready",
+    reason: "postgres_unavailable",
     staged: true
   });
+});
+
+test("API readiness exposes outbox health failures instead of reporting ready", async () => {
+  const repository = { async checkReadiness() { return { ready: true }; }, async close() {} };
+  const storage = { configuration: { maxFileBytes: 1024 }, async checkReadiness() { return { ready: true }; }, async close() {} };
+  const outbox = {
+    async checkReadiness() {
+      const error = new Error("dead jobs exceed policy");
+      error.code = "outbox_unhealthy";
+      throw error;
+    },
+    async close() {}
+  };
+  const server = createServer({ env: stagedEnv, repository, storage, outbox, logger });
+  await assert.rejects(
+    () => server.checkReadiness(),
+    (error) => error.code === "outbox_unhealthy"
+  );
 });

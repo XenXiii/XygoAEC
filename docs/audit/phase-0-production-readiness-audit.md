@@ -129,7 +129,7 @@ tenancy only. No pagination, sorting, filtering, or body-schema validation (pres
 | B10 | No pagination/filtering on list routes | MED | Unbounded payloads at scale | `handlers.js` | Scale | Cursor pagination + limits |
 | B11 | No graceful shutdown/readiness | MED | Dropped requests on deploy | `server.js` | Reliability | SIGTERM drain + `/ready` |
 | B12 | No idempotency on writes | MED | Duplicate records on retry | `handlers.js` | Data integrity | Idempotency-Key handling |
-| B13 | Worker/outbox absent | MED | No async processing / eventual consistency | `apps/worker`, `packages/audit` | Reliability | Implement outbox consumer |
+| B13 | Worker/outbox absent (historical; implementation added in migration `0005_durable_outbox`) | MED | No async processing / eventual consistency | `apps/worker`, `packages/audit` | Reliability | Deploy and smoke-test the durable outbox consumer |
 | B14 | "AI" has no model/eval/provenance runtime | MED (product) | Cannot claim AI review to customers | `packages/ai-review` | AI governance | Model abstraction + eval harness + cost tracking |
 | B15 | No secret management / env separation | MED | Cannot hold provider creds safely | infra | Deploy | Secret store + per-env config |
 | B16 | Deploy asset is a no-op | LOW | Cannot deploy reproducibly | `docker-compose.staged.yml` | Deploy | Real Dockerfile + compose/k8s |
@@ -365,7 +365,7 @@ All dependency-free and test-backed; live-verified. Suite **194 → 203** (1 gat
 
 ### NOT done (carry forward)
 Distributed tracing (OTel SDK), dashboards, alerting, runbooks, SLOs; cross-process/crash-durable
-outbox (needs the Postgres table); secret management; multi-instance idempotency/rate-limit (Redis).
+outbox deployment/operations (the PostgreSQL table and worker are implemented); secret management; multi-instance request idempotency/rate-limit (Redis).
 
 ---
 

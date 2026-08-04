@@ -15,6 +15,7 @@ import { rootLogger } from "./telemetry/logger.js";
 import { assertStagedMode } from "../../../packages/staged-mode/src/index.js";
 import { assertProductionApiEnvironment } from "../../../packages/production-config/src/index.js";
 import { createStorageFromEnv } from "../../../packages/file-storage/src/index.js";
+import { createOutboxStoreFromEnv } from "./reliability/outbox.js";
 
 function sendJson(res, status, body, extraHeaders = {}) {
   if (res.headersSent) {
@@ -48,6 +49,7 @@ export function createServer({
   metrics = createMetrics(),
   repository: injectedRepository = null,
   storage: injectedStorage = null,
+  outbox: injectedOutbox = null,
   jwks: injectedJwks = null
 } = {}) {
   assertProductionApiEnvironment(env);
@@ -63,6 +65,7 @@ export function createServer({
     : null;
   const repository = injectedRepository ?? createRepositoryFromEnv(env);
   const storage = injectedStorage ?? createStorageFromEnv(env);
+  const outbox = injectedOutbox ?? createOutboxStoreFromEnv(env, { service: "api" });
 
   const maxBodyBytes = Number(env.XYGO_MAX_BODY_BYTES ?? 1_048_576);
   const requestTimeoutMs = Number(env.XYGO_REQUEST_TIMEOUT_MS ?? 15_000);
@@ -80,11 +83,16 @@ export function createServer({
       error.code = "server_draining";
       throw error;
     }
-    const [databaseReadiness, storageReadiness] = await Promise.all([
+    const [databaseReadiness, storageReadiness, outboxReadiness] = await Promise.all([
       typeof repository.checkReadiness === "function" ? repository.checkReadiness() : { ready: true },
-      typeof storage.checkReadiness === "function" ? storage.checkReadiness() : { ready: true }
+      typeof storage.checkReadiness === "function" ? storage.checkReadiness() : { ready: true },
+      outbox.checkReadiness({
+        staleAfterMs: Number(env.XYGO_WORKER_STALE_AFTER_MS ?? 60_000),
+        maxDeadJobs: Number(env.XYGO_WORKER_MAX_DEAD_JOBS ?? 0),
+        requireHealthy: env.NODE_ENV === "production" || env.STAGED_MODE === "false"
+      })
     ]);
-    return { ready: true, database: databaseReadiness, storage: storageReadiness };
+    return { ready: true, database: databaseReadiness, storage: storageReadiness, outbox: outboxReadiness };
   };
 
   const server = http.createServer((req, res) => {
@@ -123,10 +131,11 @@ export function createServer({
     }
     if (req.method === "GET" && path === "/ready") {
       checkReadiness()
-        .then(() => sendJson(res, 200, { ready: true, staged: true }))
+        .then((readiness) => sendJson(res, 200, { ...readiness, staged: true }))
         .catch((error) => {
-          logger.warn?.("server.readiness_failed", { code: error?.code ?? "database_not_ready" });
-          sendJson(res, 503, { ready: false, reason: "database_not_ready", staged: true });
+          const reason = error?.code ?? "dependency_not_ready";
+          logger.warn?.("server.readiness_failed", { code: reason });
+          sendJson(res, 503, { ready: false, reason, staged: true });
         });
       return;
     }
@@ -233,6 +242,7 @@ export function createServer({
             body,
             repository,
             storage,
+            outbox,
             principal,
             authConfig,
             auditSigningKey: env.XYGO_AUDIT_SIGNING_KEY ?? null
@@ -258,7 +268,8 @@ export function createServer({
     server.close(() => {
       Promise.all([
         Promise.resolve(typeof repository.close === "function" ? repository.close() : null),
-        Promise.resolve(typeof storage.close === "function" ? storage.close() : null)
+        Promise.resolve(typeof storage.close === "function" ? storage.close() : null),
+        Promise.resolve(outbox.close())
       ])
         .catch((error) => {
           logger.error?.("repository.close_failed", { code: error?.code ?? "repository_close_failed" });
@@ -273,7 +284,8 @@ export function createServer({
   server.closeRepository = async () => {
     await Promise.all([
       typeof repository.close === "function" ? repository.close() : null,
-      typeof storage.close === "function" ? storage.close() : null
+      typeof storage.close === "function" ? storage.close() : null,
+      outbox.close()
     ]);
   };
   server.isShuttingDown = () => shuttingDown;

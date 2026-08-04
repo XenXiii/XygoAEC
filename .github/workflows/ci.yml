@@ -37,6 +37,7 @@ jobs:
       XYGO_TEST_PG_URL: postgres://xygo:xygo@localhost:5432/xygo_test
       XYGO_API_PG_URL: postgres://xygo:xygo@localhost:5432/xygo_test
       XYGO_REQUIRE_PG_TESTS: "true"
+      XYGO_OUTBOX_BACKEND: postgres
     services:
       postgres:
         image: postgres:16
@@ -64,5 +65,7 @@ jobs:
         run: npm run migrate:postgres
       - name: Verify Postgres readiness without schema mutation
         run: npm run check:postgres
+      - name: Verify durable outbox readiness
+        run: npm run check:outbox
       - name: Run required Postgres conformance suite
         run: npm run test:postgres
