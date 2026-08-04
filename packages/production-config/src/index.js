@@ -16,6 +16,22 @@ const WORKER_NUMERIC_LIMITS = Object.freeze({
   XYGO_WORKER_BASE_BACKOFF_MS: { minimum: 100, maximum: 900_000 },
   XYGO_WORKER_CONCURRENCY: { minimum: 1, maximum: 64 }
 });
+export const POSTGRES_POOL_ENVIRONMENT = Object.freeze({
+  XYGO_PG_POOL_MAX: { option: "max", defaultValue: 10, minimum: 1, maximum: 50 },
+  XYGO_PG_IDLE_TIMEOUT_MS: {
+    option: "idleTimeoutMillis",
+    defaultValue: 30_000,
+    minimum: 1_000,
+    maximum: 300_000
+  },
+  XYGO_PG_CONNECTION_TIMEOUT_MS: {
+    option: "connectionTimeoutMillis",
+    defaultValue: 5_000,
+    minimum: 1_000,
+    maximum: 30_000
+  }
+});
+const POSTGRES_POOL_ENV_VARS = Object.freeze(Object.keys(POSTGRES_POOL_ENVIRONMENT));
 
 export const PUBLIC_WEB_RUNTIME_ENV_VARS = Object.freeze([
   "XYGO_DEPLOY_ENVIRONMENT",
@@ -53,6 +69,7 @@ const API_REQUIRED_ENV_VARS = Object.freeze([
   "XYGO_AUTH_MODE",
   "XYGO_API_REPOSITORY_MODE",
   "XYGO_API_PG_URL",
+  ...POSTGRES_POOL_ENV_VARS,
   "XYGO_OIDC_PROVIDER",
   "XYGO_OIDC_ISSUER",
   "XYGO_OIDC_AUDIENCE",
@@ -91,6 +108,7 @@ const WORKER_REQUIRED_ENV_VARS = Object.freeze([
   "XYGO_DEPLOY_ENVIRONMENT",
   "XYGO_RELEASE",
   "XYGO_API_PG_URL",
+  ...POSTGRES_POOL_ENV_VARS,
   "XYGO_AUDIT_SIGNING_KEY",
   "XYGO_WEB_APP_URL",
   "XYGO_EMAIL_TRANSPORT",
@@ -229,6 +247,27 @@ function requireInteger(env, name, service, { minimum = 1, maximum = Number.MAX_
   }
 }
 
+export function postgresPoolOptionsFromEnvironment(env = {}) {
+  const options = {};
+  for (const [name, specification] of Object.entries(POSTGRES_POOL_ENVIRONMENT)) {
+    const raw = normalizedString(env[name]) ?? String(specification.defaultValue);
+    const value = Number(raw);
+    if (
+      !/^\d+$/.test(raw) ||
+      !Number.isSafeInteger(value) ||
+      value < specification.minimum ||
+      value > specification.maximum
+    ) {
+      throw new Error(
+        `Postgres pool configuration error: ${name} must be an integer between ` +
+        `${specification.minimum} and ${specification.maximum}.`
+      );
+    }
+    options[specification.option] = value;
+  }
+  return options;
+}
+
 function requireEmail(env, service) {
   const value = normalizedString(env.XYGO_EMAIL_FROM);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value ?? "")) {
@@ -270,6 +309,9 @@ function assertProductionBaseline(env, names, service) {
 
 function assertBackendServices(env, service) {
   requirePostgresUrl(env, service);
+  for (const [name, bounds] of Object.entries(POSTGRES_POOL_ENVIRONMENT)) {
+    requireInteger(env, name, service, bounds);
+  }
   requireSecret(env, "XYGO_AUDIT_SIGNING_KEY", service);
   requireExact(env, "XYGO_EMAIL_TRANSPORT", "smtp", service);
   requireEmail(env, service);
@@ -298,6 +340,9 @@ export function assertProductionApiEnvironment(env = process.env) {
   requireHttpsUrl(env, "XYGO_WEB_API_BASE_URL", "API");
   rejectReservedUrlAudience(env, "API");
   requireInteger(env, "XYGO_OIDC_CLOCK_TOLERANCE_SEC", "API", { minimum: 0, maximum: 300 });
+  if (normalizedString(env.XYGO_PG_SEED_SYNTHETIC_DATA) === "true") {
+    fail("API", "XYGO_PG_SEED_SYNTHETIC_DATA must not be enabled in production.");
+  }
   assertBackendServices(env, "API");
 }
 

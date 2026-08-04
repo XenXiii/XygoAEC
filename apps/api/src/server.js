@@ -61,6 +61,18 @@ export function createServer({
   let shuttingDown = false;
   let inFlight = 0;
 
+  const checkReadiness = async () => {
+    if (shuttingDown) {
+      const error = new Error("Server is draining.");
+      error.code = "server_draining";
+      throw error;
+    }
+    if (typeof repository.checkReadiness === "function") {
+      return repository.checkReadiness();
+    }
+    return { ready: true };
+  };
+
   const server = http.createServer((req, res) => {
     const start = process.hrtime.bigint();
     const requestId = req.headers["x-request-id"] ?? crypto.randomUUID();
@@ -96,7 +108,12 @@ export function createServer({
       return;
     }
     if (req.method === "GET" && path === "/ready") {
-      sendJson(res, shuttingDown ? 503 : 200, { ready: !shuttingDown, staged: true });
+      checkReadiness()
+        .then(() => sendJson(res, 200, { ready: true, staged: true }))
+        .catch((error) => {
+          logger.warn?.("server.readiness_failed", { code: error?.code ?? "database_not_ready" });
+          sendJson(res, 503, { ready: false, reason: "database_not_ready", staged: true });
+        });
       return;
     }
     if (req.method === "GET" && path === "/metrics") {
@@ -220,11 +237,19 @@ export function createServer({
     shuttingDown = true;
     logger.info("server.shutdown_initiated", { inFlight });
     server.close(() => {
-      logger.info("server.closed");
-      if (onDrained) {
-        onDrained();
-      }
+      Promise.resolve(typeof repository.close === "function" ? repository.close() : null)
+        .catch((error) => {
+          logger.error?.("repository.close_failed", { code: error?.code ?? "repository_close_failed" });
+        })
+        .finally(() => {
+          logger.info("server.closed");
+          if (onDrained) onDrained();
+        });
     });
+  };
+  server.checkReadiness = checkReadiness;
+  server.closeRepository = async () => {
+    if (typeof repository.close === "function") await repository.close();
   };
   server.isShuttingDown = () => shuttingDown;
   server.inFlight = () => inFlight;
@@ -232,12 +257,32 @@ export function createServer({
   return server;
 }
 
+export async function listenWhenReady(server, { port, host } = {}) {
+  await server.checkReadiness();
+  await new Promise((resolve, reject) => {
+    const onError = (error) => reject(error);
+    server.once("error", onError);
+    const onListening = () => {
+      server.off("error", onError);
+      resolve();
+    };
+    if (host) server.listen(port, host, onListening);
+    else server.listen(port, onListening);
+  });
+  return server;
+}
+
 if (process.argv[1] && process.argv[1].endsWith("/server.js")) {
   const port = Number(process.env.PORT ?? 3000);
   const server = createServer();
-  server.listen(port, () => {
+  try {
+    await listenWhenReady(server, { port, host: process.env.HOST });
     rootLogger.info("server.listening", { port });
-  });
+  } catch (error) {
+    rootLogger.error("server.startup_failed", { code: error?.code ?? "postgres_not_ready" });
+    await server.closeRepository();
+    process.exitCode = 1;
+  }
 
   const shutdown = () => {
     server.beginShutdown({ onDrained: () => process.exit(0) });

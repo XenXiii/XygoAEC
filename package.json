@@ -15,6 +15,7 @@
     "provision:tenant": "node scripts/provision-staged-tenant.mjs",
     "bind:oidc-user": "node scripts/bind-oidc-user.mjs",
     "migrate:postgres": "node scripts/migrate-postgres.mjs",
+    "check:postgres": "node scripts/check-postgres-readiness.mjs",
     "test": "XYGO_API_REPOSITORY_MODE=memory node --test packages/*/test/**/*.test.js apps/*/test/**/*.test.js",
     "test:staged-mode": "node --test packages/staged-mode/test/**/*.test.js",
     "test:foundation": "node --test packages/{shared-contracts,auth,authorization,audit}/test/**/*.test.js",

@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 
 import { createStaticJwks } from "../src/auth/jwks.js";
 import { createPostgresRepository } from "../src/repositories/postgres.js";
-import { createServer } from "../src/server.js";
+import { createServer, listenWhenReady } from "../src/server.js";
 import { validProductionEnvironment } from "../../../packages/production-config/test/fixtures.js";
 
 const PG_URL = process.env.XYGO_TEST_PG_URL;
@@ -73,14 +73,9 @@ function provisioningInput({ slug, businessName, brandName, primaryColor, subjec
   };
 }
 
-function listen(server) {
-  return new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      server.off("error", reject);
-      resolve(server.address());
-    });
-  });
+async function listen(server) {
+  await listenWhenReady(server, { port: 0, host: "127.0.0.1" });
+  return server.address();
 }
 
 function closeServer(server) {

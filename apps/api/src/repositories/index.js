@@ -4,6 +4,7 @@ import { createFileRepository } from "./file.js";
 import { createMemoryRepository } from "./memory.js";
 import { createSqliteRepository } from "./sqlite.js";
 import { createPostgresRepository } from "./postgres.js";
+import { postgresPoolOptionsFromEnvironment } from "../../../../packages/production-config/src/index.js";
 
 const DEFAULT_DATA_PATH = path.resolve(process.cwd(), "infrastructure/staged-data/api-store.json");
 const DEFAULT_SQLITE_PATH = path.resolve(process.cwd(), "infrastructure/staged-data/api-store.sqlite");
@@ -34,7 +35,12 @@ export function createRepositoryFromEnv(env = process.env) {
   if (mode === "postgres") {
     return createPostgresRepository({
       connectionString: env.XYGO_API_PG_URL,
-      auditSigningKey: env.XYGO_AUDIT_SIGNING_KEY ?? null
+      auditSigningKey: env.XYGO_AUDIT_SIGNING_KEY ?? null,
+      poolOptions: {
+        ...postgresPoolOptionsFromEnvironment(env),
+        application_name: "xygo-api"
+      },
+      seedSyntheticData: env.XYGO_PG_SEED_SYNTHETIC_DATA === "true"
     });
   }
 

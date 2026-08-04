@@ -8,7 +8,8 @@ import {
   REQUIRED_PRODUCTION_ENV_VARS,
   assertProductionApiEnvironment,
   assertProductionWebEnvironment,
-  assertProductionWorkerEnvironment
+  assertProductionWorkerEnvironment,
+  postgresPoolOptionsFromEnvironment
 } from "../src/index.js";
 import { validProductionEnvironment } from "./fixtures.js";
 
@@ -85,6 +86,12 @@ test("unsafe backend settings fail closed", () => {
       XYGO_WEB_OIDC_CLIENT_ID: "<public-client-id>"
     })),
     /placeholder values are forbidden.*XYGO_WEB_OIDC_CLIENT_ID/
+  );
+  assert.throws(
+    () => assertProductionApiEnvironment(validProductionEnvironment({
+      XYGO_PG_SEED_SYNTHETIC_DATA: "true"
+    })),
+    /XYGO_PG_SEED_SYNTHETIC_DATA must not be enabled/
   );
 });
 
@@ -165,6 +172,40 @@ test("worker and OIDC clock numeric bounds reject unsafe extremes", () => {
       })),
       /XYGO_OIDC_CLOCK_TOLERANCE_SEC/
     );
+  }
+});
+
+test("Postgres pool settings use safe defaults locally and bounded explicit values in production", () => {
+  assert.deepEqual(postgresPoolOptionsFromEnvironment({}), {
+    max: 10,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000
+  });
+  assert.deepEqual(postgresPoolOptionsFromEnvironment({
+    XYGO_PG_POOL_MAX: "1",
+    XYGO_PG_IDLE_TIMEOUT_MS: "1000",
+    XYGO_PG_CONNECTION_TIMEOUT_MS: "30000"
+  }), {
+    max: 1,
+    idleTimeoutMillis: 1000,
+    connectionTimeoutMillis: 30000
+  });
+
+  for (const [name, values] of Object.entries({
+    XYGO_PG_POOL_MAX: ["0", "51"],
+    XYGO_PG_IDLE_TIMEOUT_MS: ["999", "300001"],
+    XYGO_PG_CONNECTION_TIMEOUT_MS: ["999", "30001"]
+  })) {
+    for (const value of values) {
+      assert.throws(
+        () => assertProductionApiEnvironment(validProductionEnvironment({ [name]: value })),
+        new RegExp(name)
+      );
+      assert.throws(
+        () => postgresPoolOptionsFromEnvironment({ [name]: value }),
+        new RegExp(name)
+      );
+    }
   }
 });
 

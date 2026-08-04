@@ -11,7 +11,10 @@ import { createAuditEvent } from "../../../../packages/audit/src/foundation.js";
 import { buildStagedTenantProvisioning } from "../../../../packages/activation/src/provision-tenant.js";
 import { createSeedState } from "./seed.js";
 import { syntheticTenants } from "../../../../packages/test-fixtures/src/synthetic-tenants.js";
-import { applyPostgresMigrations } from "./postgres-migrations.js";
+import {
+  assertPostgresMigrationsCurrent,
+  checkPostgresReadiness
+} from "./postgres-migrations.js";
 
 function requiredString(value, label) {
   if (typeof value !== "string" || !value.trim()) {
@@ -43,9 +46,11 @@ function oidcBindingConflict(message) {
 // Production Postgres backend. Implements the SAME async repository contract as
 // the other backends. `pg` is imported lazily so this module loads even when the
 // dependency is absent (e.g. sqlite/memory-only environments and the default CI
-// job); a connection is only attempted on first query. Verified in CI against a
-// Postgres service (see .github/workflows/ci.yml, postgres job) — not runnable in
-// the offline dev sandbox.
+// job); a connection is attempted only by a readiness check or repository query.
+// Schema changes are never applied here: the separate deploy migration command
+// must run first. Verified in CI against a Postgres service (see
+// .github/workflows/ci.yml, postgres job) — not runnable in the offline dev
+// sandbox.
 
 export async function runPostgresTransaction(pool, operation) {
   const client = await pool.connect();
@@ -69,6 +74,8 @@ export async function runPostgresTransaction(pool, operation) {
 export function createPostgresRepository({
   connectionString,
   auditSigningKey = null,
+  poolOptions = {},
+  seedSyntheticData = false,
   beforeProvisioningCommit = null,
   beforeOidcBindingCommit = null
 }) {
@@ -82,10 +89,15 @@ export function createPostgresRepository({
     if (!poolPromise) {
       poolPromise = (async () => {
         const pg = (await import("pg")).default;
-        const p = new pg.Pool({ connectionString });
-        await applyPostgresMigrations(p);
-        await seed(p);
-        return p;
+        const p = new pg.Pool({ connectionString, ...poolOptions });
+        try {
+          await assertPostgresMigrationsCurrent(p);
+          if (seedSyntheticData) await seed(p);
+          return p;
+        } catch (error) {
+          await p.end();
+          throw error;
+        }
       })();
     }
     return poolPromise;
@@ -193,6 +205,9 @@ export function createPostgresRepository({
   }
 
   return {
+    async checkReadiness() {
+      return checkPostgresReadiness(await pool());
+    },
     async provisionStagedTenant(input) {
       const records = buildStagedTenantProvisioning(input);
       const tenantId = records.tenant.id;
@@ -628,8 +643,12 @@ export function createPostgresRepository({
     },
     async close() {
       if (poolPromise) {
-        const p = await poolPromise;
-        await p.end();
+        try {
+          const p = await poolPromise;
+          await p.end();
+        } catch {
+          // A failed startup check already closes its pool before rejecting.
+        }
         poolPromise = null;
       }
     }

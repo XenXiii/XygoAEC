@@ -21,6 +21,7 @@ export XYGO_TEST_PG_URL='<disposable-postgres-url>'
 export XYGO_API_PG_URL="$XYGO_TEST_PG_URL"
 npm run migrate:postgres
 npm run migrate:postgres
+npm run check:postgres
 npm run test:postgres
 ```
 
@@ -28,13 +29,14 @@ An unset `XYGO_TEST_PG_URL` causes the Postgres tests to skip explicitly. A rele
 the variable and require the tests to execute rather than accept a skip.
 
 The GitHub Actions Postgres job supplies both URLs only to its disposable Postgres 16 service job,
-sets `XYGO_REQUIRE_PG_TESTS=true`, applies migrations twice, and then runs `npm run test:postgres`.
+sets `XYGO_REQUIRE_PG_TESTS=true`, applies migrations twice, verifies readiness without mutation, and
+then runs `npm run test:postgres`.
 Required mode exits with an error if `XYGO_TEST_PG_URL` is absent, so that job cannot pass by skip.
 
 ## Migrations
 
-The Postgres repository applies ordered SQL migrations at connection startup and records them in
-`schema_migrations`:
+The deployment-only `npm run migrate:postgres` command applies ordered SQL migrations and records them
+in `schema_migrations`:
 
 1. `0001_init.sql`
 2. `0002_paid_client_provisioning.sql`
@@ -52,6 +54,12 @@ not authorize access.
 The conformance suite checks the actual table names, recorded migration versions, canonical
 repository reads, cross-tenant project/user separation, portal branding/update separation,
 idempotency, conflict rejection, audit records, and full rollback after a forced error.
+
+The application repository never applies migrations. It checks connectivity and requires the exact
+migration chain before use; production API startup performs that read-only check before listening.
+Provisioning and identity-binding commands also require the target database to be migrated first.
+See the [Managed PostgreSQL Operations Runbook](../operations/managed-postgres-runbook.md) for the
+staging/production migration, pool, backup, restore-drill, and rollback procedures.
 
 ## Provision A Staged Tenant
 
