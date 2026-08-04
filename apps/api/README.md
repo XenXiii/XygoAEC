@@ -4,6 +4,7 @@ Staged read-only HTTP surface for Xygo.
 
 Current endpoints:
 - `GET /health`
+- `GET /ready` (database connectivity and migration readiness for PostgreSQL)
 - `GET /v1/tenants/:tenantId/projects`
 - `POST /v1/tenants/:tenantId/projects`
 - `GET /v1/tenants/:tenantId/issues`
@@ -38,6 +39,10 @@ Repository modes:
 - default: sqlite-backed staged persistence at `infrastructure/staged-data/api-store.sqlite`
 - file fallback: `XYGO_API_REPOSITORY_MODE=file`
 - override with `XYGO_API_REPOSITORY_MODE=memory`
+- production Postgres: `XYGO_API_REPOSITORY_MODE=postgres` with an explicitly migrated database;
+  application startup verifies migrations but never applies them
+- staged Postgres can opt into synthetic seed records with `XYGO_PG_SEED_SYNTHETIC_DATA=true`;
+  production validation rejects that setting
 - override file path with `XYGO_API_DATA_PATH=relative/path.json`
 - override sqlite path with `XYGO_API_DB_PATH=relative/path.sqlite`
 

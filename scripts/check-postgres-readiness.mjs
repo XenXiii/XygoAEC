@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-import { applyPostgresMigrations } from "../apps/api/src/repositories/postgres-migrations.js";
+import { checkPostgresReadiness } from "../apps/api/src/repositories/postgres-migrations.js";
 import { postgresPoolOptionsFromEnvironment } from "../packages/production-config/src/index.js";
 
 const connectionString = process.env.XYGO_API_PG_URL;
 if (!connectionString) {
-  throw new Error("XYGO_API_PG_URL is required to apply Postgres migrations.");
+  throw new Error("XYGO_API_PG_URL is required to check Postgres readiness.");
 }
 
 const pg = (await import("pg")).default;
@@ -12,11 +12,11 @@ const pool = new pg.Pool({
   connectionString,
   ...postgresPoolOptionsFromEnvironment(process.env),
   max: 1,
-  application_name: "xygo-migrator"
+  application_name: "xygo-readiness-check"
 });
 try {
-  const versions = await applyPostgresMigrations(pool);
-  process.stdout.write(`Postgres migrations current: ${versions.join(", ")}\n`);
+  const result = await checkPostgresReadiness(pool);
+  process.stdout.write(`${JSON.stringify(result)}\n`);
 } finally {
   await pool.end();
 }

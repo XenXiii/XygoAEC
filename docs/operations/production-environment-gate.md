@@ -48,6 +48,9 @@ The API requires `XYGO_WEB_APP_URL`, `XYGO_WEB_API_BASE_URL`, `XYGO_AUTH_MODE=oi
 
 - `XYGO_API_REPOSITORY_MODE=postgres`
 - `XYGO_API_PG_URL`: PostgreSQL URL with `sslmode=require`, `verify-ca`, or `verify-full`
+- `XYGO_PG_POOL_MAX`: connections per process, integer from 1 through 50
+- `XYGO_PG_IDLE_TIMEOUT_MS`: integer from 1000 through 300000
+- `XYGO_PG_CONNECTION_TIMEOUT_MS`: integer from 1000 through 30000
 - `XYGO_OIDC_JWKS_URI`: explicit HTTPS JWKS URL
 - `XYGO_OIDC_ALLOWED_ALGORITHMS`
 - `XYGO_OIDC_CLOCK_TOLERANCE_SEC`: integer from 0 through 300
@@ -86,6 +89,11 @@ Production URLs, PostgreSQL URLs, SMTP hosts, and email domains reject IANA-rese
 and invalid names, local or loopback names, and obvious placeholder labels. This prevents the example
 manifest from becoming bootable after only its secret placeholders are replaced.
 
+PostgreSQL migrations are deliberately not an application-startup feature. Run the separate
+deployment migration and readiness commands using the procedure in the
+[Managed PostgreSQL Operations Runbook](managed-postgres-runbook.md). Production API startup then
+performs a read-only database/schema preflight before listening.
+
 ## Private values and rotation
 
 The database URL, audit signing key, SMTP username/password, storage access key/secret, server-side
@@ -100,5 +108,6 @@ approved; that procedure is not implemented in this slice.
 ## What this gate does not do
 
 This change does not configure a live IdP, SMTP account, object store, telemetry backend, managed
-Postgres database, or durable worker. It does not deploy. Those integrations, migrations/rollback,
-health checks, secret-manager bindings, and staging smoke tests remain separate release blockers.
+Postgres database, or durable worker. It does not deploy or execute the documented backup, restore,
+rollback, or migration procedures against a managed service. Live service configuration,
+secret-manager bindings, a successful restore drill, and staging smoke tests remain release blockers.

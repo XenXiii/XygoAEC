@@ -62,5 +62,7 @@ jobs:
         run: npm run migrate:postgres
       - name: Reapply Postgres migrations (idempotency gate)
         run: npm run migrate:postgres
+      - name: Verify Postgres readiness without schema mutation
+        run: npm run check:postgres
       - name: Run required Postgres conformance suite
         run: npm run test:postgres

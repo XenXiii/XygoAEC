@@ -6,6 +6,10 @@ import { createStaticJwks } from "../src/auth/jwks.js";
 import { resolveOidcPrincipal } from "../src/auth/principal.js";
 import { handleApiRequest } from "../src/handlers.js";
 import { createPostgresRepository } from "../src/repositories/postgres.js";
+import {
+  applyPostgresMigrations,
+  checkPostgresReadiness
+} from "../src/repositories/postgres-migrations.js";
 
 // Gated: only runs when a Postgres URL is provided (CI postgres job). Verifies the
 // postgres backend satisfies the same repository contract as memory/file/sqlite.
@@ -91,8 +95,62 @@ test("postgres schema contains every canonical provisioning table", { skip }, as
   ]);
 });
 
+test("postgres readiness verifies connectivity and the complete migration chain", { skip }, async (t) => {
+  const pg = (await import("pg")).default;
+  const pool = new pg.Pool({ connectionString: PG_URL });
+  t.after(() => pool.end());
+
+  const readiness = await checkPostgresReadiness(pool);
+  assert.equal(readiness.ready, true);
+  assert.deepEqual(readiness.migrations, [
+    "0001_init",
+    "0002_paid_client_provisioning",
+    "0003_oidc_authorization"
+  ]);
+});
+
+test("postgres migration runner is repeatable and does not rewrite applied records", { skip }, async (t) => {
+  const pg = (await import("pg")).default;
+  const pool = new pg.Pool({ connectionString: PG_URL });
+  t.after(() => pool.end());
+  const before = await pool.query("SELECT version, applied_at FROM schema_migrations ORDER BY version");
+
+  const first = await applyPostgresMigrations(pool);
+  const second = await applyPostgresMigrations(pool);
+  const after = await pool.query("SELECT version, applied_at FROM schema_migrations ORDER BY version");
+
+  assert.deepEqual(first, second);
+  assert.deepEqual(after.rows, before.rows);
+});
+
+test("postgres repository refuses an unmigrated schema without changing it", { skip }, async (t) => {
+  const pg = (await import("pg")).default;
+  const adminPool = new pg.Pool({ connectionString: PG_URL });
+  const schemaName = `unmigrated_${process.pid}`;
+  const repository = createPostgresRepository({
+    connectionString: PG_URL,
+    poolOptions: { options: `-c search_path=${schemaName}` }
+  });
+  t.after(async () => {
+    await repository.close();
+    await adminPool.query(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE`);
+    await adminPool.end();
+  });
+  await adminPool.query(`CREATE SCHEMA ${schemaName}`);
+
+  await assert.rejects(
+    () => repository.checkReadiness(),
+    (error) => error.code === "postgres_schema_not_current" && error.migrationStatus.pending.length === 3
+  );
+  const tables = await adminPool.query(
+    "SELECT table_name FROM information_schema.tables WHERE table_schema = $1",
+    [schemaName]
+  );
+  assert.deepEqual(tables.rows, []);
+});
+
 test("postgres backend satisfies the repository contract", { skip }, async (t) => {
-  const repo = createPostgresRepository({ connectionString: PG_URL });
+  const repo = createPostgresRepository({ connectionString: PG_URL, seedSyntheticData: true });
   t.after(() => repo.close());
 
   // Seed reads + tenant scoping.
@@ -175,7 +233,7 @@ function provisioningInput(slug, email = `owner@${slug}.invalid`) {
 }
 
 test("postgres provisioning is canonical, idempotent, and conflict-safe", { skip }, async (t) => {
-  const repo = createPostgresRepository({ connectionString: PG_URL });
+  const repo = createPostgresRepository({ connectionString: PG_URL, seedSyntheticData: true });
   t.after(() => repo.close());
   const slug = `pg-paid-client-conf-${process.pid}`;
   const tenantId = `tenant-${slug}`;
@@ -204,7 +262,7 @@ test("postgres provisioning is canonical, idempotent, and conflict-safe", { skip
 });
 
 test("verified OIDC identity resolves tenant and role from canonical Postgres records", { skip }, async (t) => {
-  const repo = createPostgresRepository({ connectionString: PG_URL });
+  const repo = createPostgresRepository({ connectionString: PG_URL, seedSyntheticData: true });
   t.after(() => repo.close());
   const slug = `pg-oidc-auth-${process.pid}`;
   const tenantId = `tenant-${slug}`;
@@ -333,7 +391,7 @@ test("verified OIDC identity resolves tenant and role from canonical Postgres re
 });
 
 test("managed IdP binding activates a provisioned user transactionally", { skip }, async (t) => {
-  const repo = createPostgresRepository({ connectionString: PG_URL });
+  const repo = createPostgresRepository({ connectionString: PG_URL, seedSyntheticData: true });
   t.after(() => repo.close());
   const slug = `pg-managed-idp-bind-${process.pid}`;
   const tenantId = `tenant-${slug}`;
@@ -405,13 +463,14 @@ test("managed IdP binding activates a provisioned user transactionally", { skip 
 test("managed IdP binding rolls back identity and audit evidence on failure", { skip }, async (t) => {
   const slug = `pg-managed-idp-rollback-${process.pid}`;
   const tenantId = `tenant-${slug}`;
-  const base = createPostgresRepository({ connectionString: PG_URL });
+  const base = createPostgresRepository({ connectionString: PG_URL, seedSyntheticData: true });
   t.after(() => base.close());
   await base.provisionStagedTenant(provisioningInput(slug));
   const auditCountBefore = (await base.listAuditEventsByTenant(tenantId)).length;
 
   const failing = createPostgresRepository({
     connectionString: PG_URL,
+    seedSyntheticData: true,
     beforeOidcBindingCommit: async () => {
       throw new Error("forced OIDC binding failure");
     }
@@ -432,7 +491,7 @@ test("managed IdP binding rolls back identity and audit evidence on failure", { 
 });
 
 test("postgres provisioning and portal branding/updates remain tenant-scoped", { skip }, async (t) => {
-  const repo = createPostgresRepository({ connectionString: PG_URL });
+  const repo = createPostgresRepository({ connectionString: PG_URL, seedSyntheticData: true });
   t.after(() => repo.close());
   const suffix = process.pid;
   const alphaSlug = `pg-isolation-alpha-${suffix}`;
@@ -473,6 +532,7 @@ test("postgres provisioning rolls back every canonical record on failure", { ski
   const tenantId = `tenant-${slug}`;
   const failing = createPostgresRepository({
     connectionString: PG_URL,
+    seedSyntheticData: true,
     beforeProvisioningCommit: async () => {
       throw new Error("forced provisioning failure");
     }
