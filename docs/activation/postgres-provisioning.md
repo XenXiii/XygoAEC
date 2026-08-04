@@ -2,7 +2,8 @@
 
 Paid-client staging provisioning writes only to the application Postgres repository. The command no
 longer creates a separate JSON store. It remains staged-only and does not create identity-provider
-accounts or enable production authentication.
+accounts. Managed-provider invitation and the subsequent canonical identity binding are separate,
+reviewed steps described in [Managed IdP Runtime Contract](managed-idp-runtime.md).
 
 ## Environment
 
@@ -71,31 +72,13 @@ staging data may be provisioned.
 
 ## Bind A Provisioned User To OIDC
 
-Once the managed identity provider has created a user, add the configured issuer once and that
-user's provider subject to the secure provisioning input:
+Do not edit and rerun an existing tenant's provisioning input to add a subject: the canonical
+provisioning key correctly treats that as conflicting input. Instead, invite the user through the
+managed provider, verify its immutable subject, and run `npm run bind:oidc-user` as documented in
+[Managed IdP Runtime Contract](managed-idp-runtime.md). The binding is Postgres-only, idempotent,
+conflict-safe, transactional, and audited.
 
-```json
-{
-  "staged": true,
-  "slug": "client-slug",
-  "businessName": "Client Business",
-  "projectName": "Starter Project",
-  "oidcIssuer": "https://issuer.example.com/",
-  "users": [
-    {
-      "email": "owner@example.invalid",
-      "displayName": "Client Owner",
-      "role": "client_owner",
-      "oidcSubject": "provider-subject-from-secure-admin-channel"
-    }
-  ]
-}
-```
-
-The input file remains outside the repository. The issuer must exactly match `XYGO_OIDC_ISSUER` at
-runtime. OIDC mode requires `XYGO_API_REPOSITORY_MODE=postgres`; startup fails closed for file,
-SQLite, or memory repositories. A runtime marked by `NODE_ENV=production` or `STAGED_MODE=false`
-also refuses to start with staged authentication, non-HTTPS issuer/JWKS URLs, invalid clock
-tolerance, or an unsupported signing-algorithm allowlist. `RS256` is the default allowed algorithm.
-Self-asserted staged headers are not considered in OIDC mode, and query-string authentication is
-limited to the tenant SSE transport that cannot set an authorization header.
+OIDC mode requires `XYGO_API_REPOSITORY_MODE=postgres`; startup fails closed for file, SQLite, or
+memory repositories. Production additionally requires a supported provider name and an explicit
+HTTPS JWKS endpoint. Self-asserted staged headers are not considered in OIDC mode, and query-string
+authentication is limited to the tenant SSE transport that cannot set an authorization header.

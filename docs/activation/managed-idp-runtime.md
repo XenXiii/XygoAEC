@@ -1,0 +1,89 @@
+# Managed IdP Runtime Contract
+
+This slice defines the deploy-time OIDC contract for the API and browser and the controlled workflow
+that binds an invited provider identity to a provisioned Postgres user. It does not create provider
+accounts, deploy an environment, or add the portal login UI.
+
+## Provider setup
+
+Create two provider resources in the selected managed OIDC tenant:
+
+1. An API/resource server with the exact audience configured as `XYGO_OIDC_AUDIENCE`.
+2. A browser public client using Authorization Code flow with PKCE `S256`. Do not issue or configure a
+   client secret for the browser.
+
+Record the provider's exact issuer (including its trailing slash when the provider emits one), JWKS
+endpoint, authorization endpoint, token endpoint, and logout/end-session endpoint. Register these
+browser URLs exactly:
+
+- callback: `<XYGO_WEB_APP_URL>/auth/callback`
+- post-logout: `<XYGO_WEB_APP_URL>/`
+- allowed web origin: `XYGO_WEB_APP_URL`
+
+Start from [`config/managed-idp.env.example`](../../config/managed-idp.env.example). Real values belong
+in the approved environment or secret store. `XYGO_OIDC_PROVIDER` is descriptive but mandatory in
+production; supported values are `auth0`, `clerk`, `cognito`, `entra`, `okta`, and
+`other-managed-oidc`.
+
+The API validates bearer tokens against the exact issuer, audience, explicit JWKS endpoint, and RSA
+algorithm allowlist. The provider token's tenant or role claims are never authorization inputs.
+Postgres issuer+subject binding, active tenant, active user, and canonical role assignment determine
+access.
+
+## Invite and bind a provisioned user
+
+Provision the tenant and user first without an `oidcSubject`. In the managed provider's administrative
+console or approved automation:
+
+1. Invite/create the user with the same reviewed email address.
+2. Complete any required email verification or MFA enrollment.
+3. Retrieve the immutable OIDC `sub` from the provider's administrative record. Do not use email as
+   the subject and do not copy a tenant or role claim into Xygo.
+4. Verify the provider issuer exactly matches the runtime `XYGO_OIDC_ISSUER`.
+5. Run the binding command from a controlled operator environment:
+
+```bash
+XYGO_API_PG_URL='<canonical-postgres-url>' \
+XYGO_OIDC_ISSUER='https://tenant.example-idp.com/' \
+XYGO_AUDIT_SIGNING_KEY='<secret-audit-key>' \
+npm run bind:oidc-user -- \
+  --tenant-id tenant-client-slug \
+  --email owner@example.com \
+  --subject '<immutable-provider-sub>' \
+  --actor-id '<operator-id>' \
+  --approve-managed-idp-binding
+```
+
+The command never contacts the provider. It transactionally finds the active Postgres tenant, user,
+and role assignment; rejects missing, inactive, ambiguous, or conflicting records; inserts the unique
+issuer+subject binding; and appends `managed_idp.identity_bound` audit evidence. An exact rerun is
+idempotent. A different subject for the user, or reuse of a subject by another user, fails without a
+partial identity or audit record.
+
+## Startup gates
+
+An API runtime marked by `NODE_ENV=production` or `STAGED_MODE=false` refuses to start unless:
+
+- `XYGO_AUTH_MODE=oidc` and `XYGO_API_REPOSITORY_MODE=postgres`;
+- a supported `XYGO_OIDC_PROVIDER` is named;
+- issuer, audience, and an explicit `XYGO_OIDC_JWKS_URI` are configured;
+- issuer and JWKS use safe HTTPS URLs;
+- the algorithm allowlist contains supported RSA algorithms and clock tolerance is 0–300 seconds.
+
+The production web runtime independently refuses to start unless the app URL, API URL, public client
+ID, issuer/audience, and provider authorization/token/logout endpoints are complete and HTTPS. It
+also rejects `XYGO_WEB_OIDC_CLIENT_SECRET`. `/runtime-config.json` exposes only non-secret public
+client configuration and is served with `Cache-Control: no-store`.
+
+## Browser token lifecycle contract
+
+The web client must consume `/runtime-config.json` and use Authorization Code + PKCE `S256` with
+`state` and `nonce` validation. Access tokens stay in memory and are sent only as `Authorization:
+Bearer` headers to `XYGO_WEB_API_BASE_URL`; they must not be stored in local storage, embedded in
+URLs, or treated as a source of tenant/role authorization. The provider SDK may perform in-memory
+renewal or use a rotated refresh token only when the provider is configured for public-client refresh
+token rotation. Logout clears in-memory state and uses the configured end-session endpoint.
+
+The authenticated portal login/callback UI and token-renewal implementation remain part of the PWA
+release-surface work. Until that work lands, this contract is deploy-time configuration and startup
+validation, not a claim that end users can sign in through the web UI.

@@ -2,6 +2,8 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 
+import { assertWebRuntimeConfig, loadWebRuntimeConfig, publicWebRuntimeConfig } from "./runtime-config.js";
+
 const appRoot = path.resolve(process.cwd(), "apps/web");
 const publicDir = path.join(appRoot, "public");
 const srcDir = path.join(appRoot, "src");
@@ -42,9 +44,19 @@ function resolveFile(urlPath) {
   return publicPath;
 }
 
-export function createWebServer() {
+export function createWebServer({ env = process.env } = {}) {
+  const runtimeConfig = assertWebRuntimeConfig(loadWebRuntimeConfig(env), env);
+
   return http.createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
+    if (req.method === "GET" && url.pathname === "/runtime-config.json") {
+      res.writeHead(200, {
+        "content-type": mimeTypes[".json"],
+        "cache-control": "no-store"
+      });
+      res.end(JSON.stringify(publicWebRuntimeConfig(runtimeConfig)));
+      return;
+    }
     const filePath = resolveFile(url.pathname);
 
     if (!(filePath.startsWith(publicDir) || filePath.startsWith(srcDir)) || !fs.existsSync(filePath)) {

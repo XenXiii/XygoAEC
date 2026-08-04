@@ -137,6 +137,7 @@ test("paid-client activation works end to end through OIDC, HTTP, and canonical 
       NODE_ENV: "production",
       STAGED_MODE: "false",
       XYGO_AUTH_MODE: "oidc",
+      XYGO_OIDC_PROVIDER: "other-managed-oidc",
       XYGO_API_REPOSITORY_MODE: "postgres",
       XYGO_API_PG_URL: PG_URL,
       XYGO_OIDC_ISSUER: OIDC_ISSUER,
