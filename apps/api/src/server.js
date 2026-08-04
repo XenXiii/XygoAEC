@@ -30,7 +30,13 @@ function rateLimitKey(req) {
   return req.headers["x-staged-tenant-id"] ?? req.headers.authorization ?? req.socket?.remoteAddress ?? "anonymous";
 }
 
-export function createServer({ env = process.env, logger = rootLogger, metrics = createMetrics() } = {}) {
+export function createServer({
+  env = process.env,
+  logger = rootLogger,
+  metrics = createMetrics(),
+  repository: injectedRepository = null,
+  jwks: injectedJwks = null
+} = {}) {
   const authConfig = loadAuthConfig(env);
   const repositoryMode = env.XYGO_API_REPOSITORY_MODE ?? "sqlite";
   assertAuthConfig(authConfig, { repositoryMode });
@@ -38,8 +44,10 @@ export function createServer({ env = process.env, logger = rootLogger, metrics =
     assertStagedMode({ STAGED_MODE: authConfig.stagedModeEnabled });
   }
 
-  const jwks = authConfig.mode === "oidc" ? createRemoteJwks({ jwksUri: authConfig.oidc.jwksUri }) : null;
-  const repository = createRepositoryFromEnv(env);
+  const jwks = authConfig.mode === "oidc"
+    ? (injectedJwks ?? createRemoteJwks({ jwksUri: authConfig.oidc.jwksUri }))
+    : null;
+  const repository = injectedRepository ?? createRepositoryFromEnv(env);
 
   const maxBodyBytes = Number(env.XYGO_MAX_BODY_BYTES ?? 1_048_576);
   const requestTimeoutMs = Number(env.XYGO_REQUEST_TIMEOUT_MS ?? 15_000);
