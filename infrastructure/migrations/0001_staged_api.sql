@@ -63,3 +63,15 @@ CREATE TABLE IF NOT EXISTS field_reports (
   tenant_id TEXT NOT NULL,
   payload TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS file_records (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  field_report_id TEXT,
+  status TEXT NOT NULL,
+  payload TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_staged_file_records_tenant ON file_records(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_staged_file_records_project ON file_records(tenant_id, project_id);

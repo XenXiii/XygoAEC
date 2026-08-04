@@ -631,6 +631,106 @@ export function createPostgresRepository({
       );
       return report;
     },
+    async listFileRecordsByTenant(tenantId) {
+      return payloads(await query(
+        "SELECT payload FROM file_records WHERE tenant_id = $1 ORDER BY created_at ASC, id ASC",
+        [tenantId]
+      ));
+    },
+    async getFileRecordById(fileId) {
+      return one(await query("SELECT payload FROM file_records WHERE id = $1", [fileId]));
+    },
+    async createFileRecord(fileRecord) {
+      await query(
+        "INSERT INTO file_records " +
+          "(id, tenant_id, project_id, field_report_id, file_class, original_filename, mime_type, size_bytes, " +
+          "storage_key, status, checksum_sha256, client_visible, retention_until, deleted_at, payload, created_at, updated_at) " +
+          "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)",
+        [
+          fileRecord.id,
+          fileRecord.tenantId,
+          fileRecord.projectId,
+          fileRecord.fieldReportId ?? null,
+          fileRecord.fileClass,
+          fileRecord.originalFilename,
+          fileRecord.mimeType,
+          fileRecord.sizeBytes,
+          fileRecord.storageKey,
+          fileRecord.status,
+          fileRecord.checksumSha256 ?? null,
+          fileRecord.clientVisible === true,
+          fileRecord.retentionUntil,
+          fileRecord.deletedAt ?? null,
+          fileRecord,
+          fileRecord.createdAt,
+          fileRecord.updatedAt
+        ]
+      );
+      return fileRecord;
+    },
+    async saveFileRecord(fileRecord) {
+      const result = await query(
+        "UPDATE file_records SET project_id = $1, field_report_id = $2, status = $3, checksum_sha256 = $4, " +
+          "client_visible = $5, retention_until = $6, deleted_at = $7, payload = $8, updated_at = $9 " +
+          "WHERE id = $10 AND tenant_id = $11",
+        [
+          fileRecord.projectId,
+          fileRecord.fieldReportId ?? null,
+          fileRecord.status,
+          fileRecord.checksumSha256 ?? null,
+          fileRecord.clientVisible === true,
+          fileRecord.retentionUntil,
+          fileRecord.deletedAt ?? null,
+          fileRecord,
+          fileRecord.updatedAt,
+          fileRecord.id,
+          fileRecord.tenantId
+        ]
+      );
+      if (result.rowCount !== 1) throw new Error("File record not found.");
+      return fileRecord;
+    },
+    async finalizeFileRecord({ fileRecord, auditEvent }) {
+      const p = await pool();
+      return runPostgresTransaction(p, async (client) => {
+        const result = await client.query(
+          "UPDATE file_records SET project_id = $1, field_report_id = $2, status = $3, checksum_sha256 = $4, " +
+            "client_visible = $5, retention_until = $6, deleted_at = $7, payload = $8, updated_at = $9 " +
+            "WHERE id = $10 AND tenant_id = $11",
+          [
+            fileRecord.projectId,
+            fileRecord.fieldReportId ?? null,
+            fileRecord.status,
+            fileRecord.checksumSha256 ?? null,
+            fileRecord.clientVisible === true,
+            fileRecord.retentionUntil,
+            fileRecord.deletedAt ?? null,
+            fileRecord,
+            fileRecord.updatedAt,
+            fileRecord.id,
+            fileRecord.tenantId
+          ]
+        );
+        if (result.rowCount !== 1) throw new Error("File record not found.");
+        await client.query(
+          "INSERT INTO audit_events " +
+            "(event_id, tenant_id, action, resource_type, resource_id, previous_hash, event_hash, signature, payload) " +
+            "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+          [
+            auditEvent.eventId,
+            auditEvent.tenantId,
+            auditEvent.action,
+            auditEvent.resourceType,
+            auditEvent.resourceId,
+            auditEvent.previousHash ?? null,
+            auditEvent.eventHash,
+            auditEvent.signature ?? null,
+            auditEvent
+          ]
+        );
+        return fileRecord;
+      });
+    },
     async listAuditEventsByTenant(tenantId) {
       return payloads(await query("SELECT payload FROM audit_events WHERE tenant_id = $1 ORDER BY seq ASC", [tenantId]));
     },

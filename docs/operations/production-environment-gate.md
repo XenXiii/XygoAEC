@@ -67,6 +67,13 @@ The API requires `XYGO_WEB_APP_URL`, `XYGO_WEB_API_BASE_URL`, `XYGO_AUTH_MODE=oi
 - `XYGO_STORAGE_ENDPOINT`: HTTPS endpoint
 - `XYGO_STORAGE_ACCESS_KEY_ID`
 - `XYGO_STORAGE_SECRET_ACCESS_KEY`: non-placeholder secret with at least 16 characters
+- `XYGO_STORAGE_FORCE_PATH_STYLE`: `true` or `false` for provider compatibility
+- `XYGO_STORAGE_PUBLIC_ACCESS=blocked`
+- `XYGO_STORAGE_SERVER_SIDE_ENCRYPTION=AES256`
+- `XYGO_STORAGE_MAX_FILE_BYTES`: integer from 1024 through 262144000
+- `XYGO_STORAGE_ALLOWED_MIME_TYPES`: explicit comma-separated types without wildcards
+- `XYGO_STORAGE_SIGNED_URL_TTL_SEC`: integer from 60 through 900
+- `XYGO_STORAGE_RETENTION_DAYS`: integer from 1 through 3650
 - `XYGO_OUTBOX_BACKEND=postgres`
 - `XYGO_MONITORING_OTLP_ENDPOINT`: HTTPS server-side telemetry endpoint
 - `XYGO_MONITORING_AUTH_TOKEN`: non-placeholder secret with at least 16 characters
@@ -81,9 +88,10 @@ outbox, and server-side monitoring values above. It additionally requires:
 - `XYGO_WORKER_BASE_BACKOFF_MS`: integer from 100 through 900000
 - `XYGO_WORKER_CONCURRENCY`: integer from 1 through 64
 
-The current worker/outbox and storage implementations are not made production-capable by this
-contract. These variables are validation placeholders for the later durable worker/outbox and tenant
-file-storage slices. A green configuration-gate test is not deployment approval.
+The tenant file-storage slice implements this private S3-compatible configuration, signed access,
+PostgreSQL metadata, and local development storage. The bucket, credentials, provider controls,
+malware/quarantine workflow, and restore drill are not provisioned by config validation. The current
+worker/outbox remains a validation placeholder. A green configuration-gate test is not deployment approval.
 
 Production URLs, PostgreSQL URLs, SMTP hosts, and email domains reject IANA-reserved example, test,
 and invalid names, local or loopback names, and obvious placeholder labels. This prevents the example
@@ -107,7 +115,7 @@ approved; that procedure is not implemented in this slice.
 
 ## What this gate does not do
 
-This change does not configure a live IdP, SMTP account, object store, telemetry backend, managed
+This change does not configure a live IdP, SMTP account, object-store service, telemetry backend, managed
 Postgres database, or durable worker. It does not deploy or execute the documented backup, restore,
 rollback, or migration procedures against a managed service. Live service configuration,
 secret-manager bindings, a successful restore drill, and staging smoke tests remain release blockers.

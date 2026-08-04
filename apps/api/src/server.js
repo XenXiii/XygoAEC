@@ -14,6 +14,7 @@ import { createMetrics } from "./telemetry/metrics.js";
 import { rootLogger } from "./telemetry/logger.js";
 import { assertStagedMode } from "../../../packages/staged-mode/src/index.js";
 import { assertProductionApiEnvironment } from "../../../packages/production-config/src/index.js";
+import { createStorageFromEnv } from "../../../packages/file-storage/src/index.js";
 
 function sendJson(res, status, body, extraHeaders = {}) {
   if (res.headersSent) {
@@ -21,6 +22,16 @@ function sendJson(res, status, body, extraHeaders = {}) {
   }
   res.writeHead(status, baseResponseHeaders({ "content-type": "application/json", ...extraHeaders }));
   res.end(JSON.stringify(body));
+}
+
+function sendResult(res, result) {
+  if (Buffer.isBuffer(result.body)) {
+    if (res.headersSent) return;
+    res.writeHead(result.status, result.headers);
+    res.end(result.body);
+    return;
+  }
+  sendJson(res, result.status, result.body, result.headers);
 }
 
 function authErrorResponse(res, error) {
@@ -36,6 +47,7 @@ export function createServer({
   logger = rootLogger,
   metrics = createMetrics(),
   repository: injectedRepository = null,
+  storage: injectedStorage = null,
   jwks: injectedJwks = null
 } = {}) {
   assertProductionApiEnvironment(env);
@@ -50,6 +62,7 @@ export function createServer({
     ? (injectedJwks ?? createRemoteJwks({ jwksUri: authConfig.oidc.jwksUri }))
     : null;
   const repository = injectedRepository ?? createRepositoryFromEnv(env);
+  const storage = injectedStorage ?? createStorageFromEnv(env);
 
   const maxBodyBytes = Number(env.XYGO_MAX_BODY_BYTES ?? 1_048_576);
   const requestTimeoutMs = Number(env.XYGO_REQUEST_TIMEOUT_MS ?? 15_000);
@@ -67,10 +80,11 @@ export function createServer({
       error.code = "server_draining";
       throw error;
     }
-    if (typeof repository.checkReadiness === "function") {
-      return repository.checkReadiness();
-    }
-    return { ready: true };
+    const [databaseReadiness, storageReadiness] = await Promise.all([
+      typeof repository.checkReadiness === "function" ? repository.checkReadiness() : { ready: true },
+      typeof storage.checkReadiness === "function" ? storage.checkReadiness() : { ready: true }
+    ]);
+    return { ready: true, database: databaseReadiness, storage: storageReadiness };
   };
 
   const server = http.createServer((req, res) => {
@@ -189,7 +203,9 @@ export function createServer({
         return;
       }
       received += chunk.length;
-      if (received > maxBodyBytes) {
+      const isLocalFileContent = req.method === "PUT" && /^\/v1\/tenants\/[^/]+\/files\/[^/]+\/content$/.test(path);
+      const requestBodyLimit = isLocalFileContent ? storage.configuration.maxFileBytes : maxBodyBytes;
+      if (received > requestBodyLimit) {
         aborted = true;
         clearTimeout(timeout);
         sendJson(res, 413, { error: "payload_too_large", message: "Request body exceeds limit.", staged: true });
@@ -204,7 +220,9 @@ export function createServer({
         return;
       }
       clearTimeout(timeout);
-      const body = chunks.length > 0 ? Buffer.concat(chunks).toString("utf8") : null;
+      const isFileContent = req.method === "PUT" && /^\/v1\/tenants\/[^/]+\/files\/[^/]+\/content$/.test(path);
+      const combinedBody = chunks.length > 0 ? Buffer.concat(chunks) : null;
+      const body = isFileContent ? (combinedBody ?? Buffer.alloc(0)) : combinedBody?.toString("utf8") ?? null;
 
       resolvePrincipal({ headers: req.headers, config: authConfig, jwks, repository })
         .then(async (principal) => {
@@ -214,11 +232,12 @@ export function createServer({
             headers: req.headers,
             body,
             repository,
+            storage,
             principal,
             authConfig,
             auditSigningKey: env.XYGO_AUDIT_SIGNING_KEY ?? null
           });
-          sendJson(res, result.status, result.body, result.headers);
+          sendResult(res, result);
         })
         .catch((error) => {
           if (error instanceof AuthError) {
@@ -237,7 +256,10 @@ export function createServer({
     shuttingDown = true;
     logger.info("server.shutdown_initiated", { inFlight });
     server.close(() => {
-      Promise.resolve(typeof repository.close === "function" ? repository.close() : null)
+      Promise.all([
+        Promise.resolve(typeof repository.close === "function" ? repository.close() : null),
+        Promise.resolve(typeof storage.close === "function" ? storage.close() : null)
+      ])
         .catch((error) => {
           logger.error?.("repository.close_failed", { code: error?.code ?? "repository_close_failed" });
         })
@@ -249,7 +271,10 @@ export function createServer({
   };
   server.checkReadiness = checkReadiness;
   server.closeRepository = async () => {
-    if (typeof repository.close === "function") await repository.close();
+    await Promise.all([
+      typeof repository.close === "function" ? repository.close() : null,
+      typeof storage.close === "function" ? storage.close() : null
+    ]);
   };
   server.isShuttingDown = () => shuttingDown;
   server.inFlight = () => inFlight;

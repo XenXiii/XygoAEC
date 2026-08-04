@@ -12,6 +12,7 @@ const TENANT = "tenant-commercial-sim";
 const FINDING = "finding-commercial-a";
 const BLUEPRINT = "blueprint-commercial-a";
 const REPORT = "field-report-commercial-a";
+const FILE = "file-openapi-contract";
 
 // The SSE stream is served by the server layer (server.js), not handleApiRequest,
 // so it is excluded from the request-level reachability check below.
@@ -22,7 +23,48 @@ function concrete(pathTemplate) {
     .replace("{tenantId}", TENANT)
     .replace("{findingId}", FINDING)
     .replace("{blueprintId}", BLUEPRINT)
-    .replace("{reportId}", REPORT);
+    .replace("{reportId}", REPORT)
+    .replace("{fileId}", FILE);
+}
+
+function storageFixture() {
+  return {
+    driver: "local",
+    configuration: { maxFileBytes: 1024, allowedMimeTypes: ["image/jpeg"], retentionDays: 365 },
+    async createUploadTarget() { return { mode: "authenticated_proxy", method: "PUT", url: null, headers: {} }; },
+    async createDownloadTarget() { return { mode: "authenticated_proxy", method: "GET", url: null, headers: {} }; },
+    async putObject() {},
+    async headObject(record) { return { tenantId: record.tenantId, contentType: record.mimeType, sizeBytes: record.sizeBytes, checksumSha256: "a".repeat(64) }; },
+    async getObject(record) { return { tenantId: record.tenantId, contentType: record.mimeType, sizeBytes: 4, body: Buffer.from("jpeg") }; },
+    async deleteObject() {}
+  };
+}
+
+function repositoryFixture(pathTemplate, method) {
+  const repository = createMemoryRepository();
+  if (pathTemplate.includes("{fileId}")) {
+    const pending = method === "post" || method === "put";
+    repository.createFileRecord({
+      id: FILE,
+      tenantId: TENANT,
+      projectId: "project-commercial-b",
+      fieldReportId: REPORT,
+      fileClass: "report_photo",
+      originalFilename: "contract.jpg",
+      mimeType: "image/jpeg",
+      sizeBytes: 4,
+      storageKey: "tenants/tenant-contract/files/file-openapi-contract",
+      status: pending ? "pending_upload" : "ready",
+      checksumSha256: pending ? null : "a".repeat(64),
+      clientVisible: true,
+      createdBy: "contract-user",
+      createdAt: "2026-08-04T00:00:00.000Z",
+      updatedAt: "2026-08-04T00:00:00.000Z",
+      retentionUntil: "2027-08-04T00:00:00.000Z",
+      deletedAt: null
+    });
+  }
+  return repository;
 }
 
 test("every documented path+method is implemented (not 404/405)", async () => {
@@ -32,12 +74,15 @@ test("every documented path+method is implemented (not 404/405)", async () => {
     }
     for (const method of Object.keys(methods)) {
       const usesTenant = pathTemplate.includes("{tenantId}");
+      const upperMethod = method.toUpperCase();
+      const isFileContentPut = upperMethod === "PUT" && pathTemplate.endsWith("/{fileId}/content");
       const res = await handleApiRequest({
-        method: method.toUpperCase(),
+        method: upperMethod,
         path: concrete(pathTemplate),
-        headers: usesTenant ? { "x-staged-tenant-id": TENANT } : {},
-        body: method.toUpperCase() === "POST" ? "{}" : null,
-        repository: createMemoryRepository()
+        headers: usesTenant ? { "x-staged-tenant-id": TENANT, ...(isFileContentPut ? { "content-type": "image/jpeg" } : {}) } : {},
+        body: isFileContentPut ? Buffer.from("jpeg") : upperMethod === "POST" ? "{}" : null,
+        repository: repositoryFixture(pathTemplate, method),
+        storage: storageFixture()
       });
 
       assert.notEqual(res.status, 404, `${method.toUpperCase()} ${pathTemplate} is documented but routes to 404`);
@@ -60,6 +105,12 @@ test("documented path set matches the implemented surface (drift guard)", () => 
     "/v1/tenants/{tenantId}/field-reports/{reportId}",
     "/v1/tenants/{tenantId}/field-reports/{reportId}/draft",
     "/v1/tenants/{tenantId}/field-reports/{reportId}/review",
+    "/v1/tenants/{tenantId}/files",
+    "/v1/tenants/{tenantId}/files/upload-intents",
+    "/v1/tenants/{tenantId}/files/{fileId}",
+    "/v1/tenants/{tenantId}/files/{fileId}/complete",
+    "/v1/tenants/{tenantId}/files/{fileId}/download",
+    "/v1/tenants/{tenantId}/files/{fileId}/content",
     "/v1/tenants/{tenantId}/client-portal",
     "/v1/tenants/{tenantId}/issues",
     "/v1/tenants/{tenantId}/rfis",

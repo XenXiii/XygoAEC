@@ -15,6 +15,11 @@ import { buildClientPortalView } from "../../../packages/client-portal/src/index
 import { baseResponseHeaders } from "./http/headers.js";
 import { sharedOutbox } from "./reliability/outbox.js";
 import { createIdempotencyStore, idempotencyKeyFor } from "./reliability/idempotency.js";
+import {
+  createPendingFileRecord,
+  createStorageFromEnv,
+  publicFileMetadata
+} from "../../../packages/file-storage/src/index.js";
 
 const sharedIdempotency = createIdempotencyStore();
 
@@ -46,6 +51,14 @@ function json(status, body) {
   };
 }
 
+function binary(status, body, headers = {}) {
+  return {
+    status,
+    headers: baseResponseHeaders(headers),
+    body
+  };
+}
+
 function badRequest(message = "Bad request.") {
   return json(400, {
     error: "bad_request",
@@ -65,6 +78,14 @@ function notFound(message = "Not found.") {
 function forbidden(message = "Tenant access denied.") {
   return json(403, {
     error: "forbidden",
+    message,
+    staged: true
+  });
+}
+
+function unavailable(error, message) {
+  return json(503, {
+    error,
     message,
     staged: true
   });
@@ -235,10 +256,36 @@ async function appendTenantAuditEvent({
   afterStateRef = null,
   signingKey = null
 }) {
+  const event = await buildTenantAuditEvent({
+    repository,
+    tenantId,
+    actorId,
+    action,
+    resourceType,
+    resourceId,
+    beforeStateRef,
+    afterStateRef,
+    signingKey
+  });
+
+  await repository.appendAuditEvent(event);
+}
+
+async function buildTenantAuditEvent({
+  repository,
+  tenantId,
+  actorId,
+  action,
+  resourceType,
+  resourceId,
+  beforeStateRef = null,
+  afterStateRef = null,
+  signingKey = null
+}) {
   const existingEvents = await repository.listAuditEventsByTenant(tenantId);
   const previousHash = existingEvents.length > 0 ? existingEvents[existingEvents.length - 1].eventHash : null;
 
-  const event = createAuditEvent({
+  return createAuditEvent({
     tenantId,
     actorType: "user",
     actorId: actorId ?? "synthetic-user",
@@ -250,8 +297,6 @@ async function appendTenantAuditEvent({
     previousHash,
     signingKey
   });
-
-  await repository.appendAuditEvent(event);
 }
 
 // Collection resources share one shape: validate body -> tenant/parent guard ->
@@ -614,16 +659,17 @@ async function routeApiRequest({
   headers = {},
   body = null,
   repository = defaultRepository,
+  storage = null,
   principal = null,
   authConfig = { mode: "staged" },
   outbox = sharedOutbox,
   idempotency = sharedIdempotency,
   auditSigningKey = process.env.XYGO_AUDIT_SIGNING_KEY ?? null
 }) {
-  if (!["GET", "POST"].includes(method)) {
+  if (!["GET", "POST", "PUT", "DELETE"].includes(method)) {
     return json(405, {
       error: "method_not_allowed",
-      message: "Only staged read/write-safe endpoints are enabled.",
+      message: "HTTP method is not enabled.",
       staged: true
     });
   }
@@ -648,6 +694,11 @@ async function routeApiRequest({
   }
 
   const tenantId = parts[2];
+  let activeStorage = storage;
+  const storageForRequest = () => {
+    activeStorage ??= createStorageFromEnv();
+    return activeStorage;
+  };
 
   // Resolve the identity. In OIDC mode the server pre-resolves and injects a
   // verified principal; if it is absent, the request is unauthenticated. In
@@ -663,7 +714,204 @@ async function routeApiRequest({
     });
   }
 
-  if (parts.length === 4) {
+  const canReadFile = (fileRecord) => {
+    if (!fileRecord || fileRecord.tenantId !== tenantId || fileRecord.status === "deleted") return notFound("File not found.");
+    const denied = authorize({ principal: effectivePrincipal, tenantId, resource: "file_record", action: "read" });
+    if (denied) return denied;
+    if (effectivePrincipal.organizationRole === "client_viewer" && (fileRecord.status !== "ready" || fileRecord.clientVisible !== true)) {
+      return notFound("File not found.");
+    }
+    return null;
+  };
+
+  const completeFileUpload = async (fileRecord) => {
+    const object = await storageForRequest().headObject(fileRecord);
+    if (!object) return badRequest("Uploaded object was not found.");
+    if (object.tenantId !== fileRecord.tenantId) return forbidden("Stored object tenant metadata does not match.");
+    if (object.contentType !== fileRecord.mimeType) return badRequest("Stored object MIME type does not match the upload intent.");
+    if (object.sizeBytes !== fileRecord.sizeBytes) return badRequest("Stored object size does not match the upload intent.");
+    const completedAt = new Date().toISOString();
+    const completed = {
+      ...fileRecord,
+      status: "ready",
+      checksumSha256: object.checksumSha256 ?? null,
+      updatedAt: completedAt
+    };
+    const event = await buildTenantAuditEvent({
+      repository,
+      tenantId,
+      actorId: effectivePrincipal.userId,
+      action: "api.file.upload_completed",
+      resourceType: "file_record",
+      resourceId: completed.id,
+      beforeStateRef: fileRecord.status,
+      afterStateRef: completed.checksumSha256 ? `sha256:${completed.checksumSha256}` : "ready",
+      signingKey: auditSigningKey
+    });
+    await repository.finalizeFileRecord({ fileRecord: completed, auditEvent: event });
+    return json(200, { item: publicFileMetadata(completed), staged: true });
+  };
+
+  if (parts[3] === "files") {
+    if (method === "GET" && parts.length === 4) {
+      const denied = authorize({ principal: effectivePrincipal, tenantId, resource: "file_record", action: "read" });
+      if (denied) return denied;
+      let items = (await repository.listFileRecordsByTenant(tenantId)).filter((item) => item.status !== "deleted");
+      if (effectivePrincipal.organizationRole === "client_viewer") {
+        items = items.filter((item) => item.status === "ready" && item.clientVisible === true);
+      }
+      return json(200, { items: items.map(publicFileMetadata), staged: true });
+    }
+
+    if (method === "POST" && parts.length === 5 && parts[4] === "upload-intents") {
+      const denied = authorize({ principal: effectivePrincipal, tenantId, resource: "file_record", action: "create" });
+      if (denied) return denied;
+      const parsed = parseBody(body);
+      const bodyShapeError = ensureObjectBody(parsed);
+      if (bodyShapeError) return badRequest(bodyShapeError);
+      const project = await repository.getProjectById(parsed?.projectId);
+      if (!project || project.tenantId !== tenantId) return forbidden("File project must exist in-tenant.");
+      let fieldReport = null;
+      if (parsed?.fieldReportId) {
+        fieldReport = await repository.getFieldReportById(parsed.fieldReportId);
+        if (!fieldReport || fieldReport.tenantId !== tenantId || fieldReport.projectId !== project.id) {
+          return forbidden("File report must exist in the same tenant and project.");
+        }
+      }
+      if (["report_photo", "report_attachment"].includes(parsed?.fileClass) && !fieldReport) {
+        return badRequest("Report files require fieldReportId.");
+      }
+      if (parsed?.clientVisible === true) {
+        const mayPublish = ["xygo_admin", "client_owner", "platform_admin", "company_admin"].includes(
+          effectivePrincipal.organizationRole
+        );
+        const approvedReport = fieldReport?.status === "approved" && fieldReport?.clientVisible === true;
+        if (!mayPublish && !approvedReport) return forbidden("Only an owner/admin or an approved report may publish a file to the client portal.");
+      }
+      try {
+        const storageAdapter = storageForRequest();
+        const fileRecord = createPendingFileRecord({
+          ...parsed,
+          tenantId,
+          createdBy: effectivePrincipal.userId
+        }, storageAdapter.configuration);
+        const upload = await storageAdapter.createUploadTarget(fileRecord);
+        if (upload.mode === "authenticated_proxy") {
+          upload.url = `/v1/tenants/${encodeURIComponent(tenantId)}/files/${encodeURIComponent(fileRecord.id)}/content`;
+        }
+        await repository.createFileRecord(fileRecord);
+        return json(201, { item: publicFileMetadata(fileRecord), upload, staged: true });
+      } catch (error) {
+        return badRequest(error.message);
+      }
+    }
+
+    if (parts.length >= 5) {
+      const fileRecord = await repository.getFileRecordById(parts[4]);
+
+      if (method === "POST" && parts.length === 6 && parts[5] === "complete") {
+        const denied = authorize({ principal: effectivePrincipal, tenantId, resource: "file_record", action: "update" });
+        if (denied) return denied;
+        if (!fileRecord || fileRecord.tenantId !== tenantId) return notFound("File not found.");
+        if (fileRecord.status === "ready") return json(200, { item: publicFileMetadata(fileRecord), staged: true });
+        if (fileRecord.status !== "pending_upload") return badRequest("File is not awaiting upload completion.");
+        try {
+          return await completeFileUpload(fileRecord);
+        } catch {
+          return unavailable("file_storage_unavailable", "File storage could not verify the uploaded object.");
+        }
+      }
+
+      if (method === "PUT" && parts.length === 6 && parts[5] === "content") {
+        const denied = authorize({ principal: effectivePrincipal, tenantId, resource: "file_record", action: "update" });
+        if (denied) return denied;
+        if (!fileRecord || fileRecord.tenantId !== tenantId) return notFound("File not found.");
+        if (fileRecord.status !== "pending_upload") return badRequest("File is not awaiting content.");
+        const storageAdapter = storageForRequest();
+        if (storageAdapter.driver !== "local") return badRequest("Direct API uploads are disabled for object storage.");
+        if (!Buffer.isBuffer(body)) return badRequest("File content must be sent as a binary request body.");
+        if (body.length !== fileRecord.sizeBytes) return badRequest("Uploaded content length does not match the declared file size.");
+        const contentType = String(headers["content-type"] ?? headers["Content-Type"] ?? "").toLowerCase().split(";", 1)[0].trim();
+        if (contentType !== fileRecord.mimeType) return badRequest("Uploaded content type does not match the declared MIME type.");
+        try {
+          await storageAdapter.putObject(fileRecord, body, contentType);
+          return await completeFileUpload(fileRecord);
+        } catch {
+          return unavailable("file_storage_unavailable", "File storage could not persist or verify the uploaded object.");
+        }
+      }
+
+      if (method === "GET" && parts.length === 6 && parts[5] === "download") {
+        const denied = canReadFile(fileRecord);
+        if (denied) return denied;
+        if (fileRecord.status !== "ready") return notFound("File is not available.");
+        const storageAdapter = storageForRequest();
+        const download = await storageAdapter.createDownloadTarget(fileRecord);
+        if (download.mode === "authenticated_proxy") {
+          download.url = `/v1/tenants/${encodeURIComponent(tenantId)}/files/${encodeURIComponent(fileRecord.id)}/content`;
+        }
+        return json(200, { item: publicFileMetadata(fileRecord), download, staged: true });
+      }
+
+      if (method === "GET" && parts.length === 6 && parts[5] === "content") {
+        const denied = canReadFile(fileRecord);
+        if (denied) return denied;
+        if (fileRecord.status !== "ready") return notFound("File is not available.");
+        const storageAdapter = storageForRequest();
+        if (storageAdapter.driver !== "local") return notFound("Direct file content is not served for object storage.");
+        const object = await storageAdapter.getObject(fileRecord);
+        if (!object || object.tenantId !== tenantId) return notFound("File content not found.");
+        return binary(200, object.body, {
+          "content-type": fileRecord.mimeType,
+          "content-length": String(object.body.length),
+          "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(fileRecord.originalFilename)}`,
+          "cache-control": "private, no-store"
+        });
+      }
+
+      if (method === "DELETE" && parts.length === 5) {
+        const denied = authorize({ principal: effectivePrincipal, tenantId, resource: "file_record", action: "delete" });
+        if (denied) return denied;
+        if (!fileRecord || fileRecord.tenantId !== tenantId) return notFound("File not found.");
+        if (fileRecord.status === "deleted") return json(200, { item: publicFileMetadata(fileRecord), staged: true });
+        const previous = fileRecord;
+        const deleting = { ...fileRecord, status: "deleting", updatedAt: new Date().toISOString() };
+        try {
+          if (fileRecord.status !== "deleting") await repository.saveFileRecord(deleting);
+          await storageForRequest().deleteObject(deleting);
+        } catch {
+          if (previous.status !== "deleting") {
+            await Promise.resolve(repository.saveFileRecord(previous)).catch(() => {});
+          }
+          return unavailable("file_storage_unavailable", "File storage could not delete the object.");
+        }
+        try {
+          const deletedAt = new Date().toISOString();
+          const deleted = { ...deleting, status: "deleted", deletedAt, updatedAt: deletedAt };
+          const event = await buildTenantAuditEvent({
+            repository,
+            tenantId,
+            actorId: effectivePrincipal.userId,
+            action: "api.file.deleted",
+            resourceType: "file_record",
+            resourceId: deleted.id,
+            beforeStateRef: previous.status,
+            afterStateRef: "deleted",
+            signingKey: auditSigningKey
+          });
+          await repository.finalizeFileRecord({ fileRecord: deleted, auditEvent: event });
+          return json(200, { item: publicFileMetadata(deleted), staged: true });
+        } catch {
+          return unavailable(
+            "file_delete_finalization_pending",
+            "Object deletion succeeded; retry DELETE to finalize metadata and audit evidence."
+          );
+        }
+      }
+    }
+  }
+
+  if (["GET", "POST"].includes(method) && parts.length === 4) {
     const resource = collectionResourcesBySegment.get(parts[3]);
     if (resource) {
       const action = method === "POST" ? "create" : "read";
@@ -803,7 +1051,7 @@ async function routeApiRequest({
     }
   }
 
-  if (parts.length === 6 && parts[3] === "ai-findings" && parts[5] === "disposition") {
+  if (method === "POST" && parts.length === 6 && parts[3] === "ai-findings" && parts[5] === "disposition") {
     const denied = authorize({
       principal: effectivePrincipal,
       tenantId,
@@ -871,7 +1119,7 @@ async function routeApiRequest({
     }
   }
 
-  if (parts.length === 5 && parts[3] === "dashboard" && parts[4] === "executive") {
+  if (method === "GET" && parts.length === 5 && parts[3] === "dashboard" && parts[4] === "executive") {
     const denied = authorize({
       principal: effectivePrincipal,
       tenantId,
@@ -900,7 +1148,7 @@ async function routeApiRequest({
     });
   }
 
-  if (parts.length === 4 && parts[3] === "blueprint-workspace") {
+  if (method === "GET" && parts.length === 4 && parts[3] === "blueprint-workspace") {
     const denied = authorize({
       principal: effectivePrincipal,
       tenantId,
@@ -934,7 +1182,7 @@ async function routeApiRequest({
     });
   }
 
-  if (parts.length === 4 && parts[3] === "audit-events") {
+  if (method === "GET" && parts.length === 4 && parts[3] === "audit-events") {
     const denied = authorize({ principal: effectivePrincipal, tenantId, resource: "audit_event", action: "read" });
     if (denied) {
       return denied;
@@ -944,7 +1192,7 @@ async function routeApiRequest({
     return json(200, { items, pagination, staged: true });
   }
 
-  if (parts.length === 5 && parts[3] === "audit-events" && parts[4] === "verify") {
+  if (method === "GET" && parts.length === 5 && parts[3] === "audit-events" && parts[4] === "verify") {
     const denied = authorize({ principal: effectivePrincipal, tenantId, resource: "audit_event", action: "read" });
     if (denied) {
       return denied;
@@ -957,7 +1205,7 @@ async function routeApiRequest({
     });
   }
 
-  if (parts.length === 4 && parts[3] === "transfers") {
+  if (method === "GET" && parts.length === 4 && parts[3] === "transfers") {
     const denied = authorize({ principal: effectivePrincipal, tenantId, resource: "transfer", action: "read" });
     if (denied) {
       return denied;
@@ -981,9 +1229,10 @@ async function routeApiRequest({
       return denied;
     }
 
-    const [projects, reports, storedPortalConfiguration, storedPortalData] = await Promise.all([
+    const [projects, reports, fileRecords, storedPortalConfiguration, storedPortalData] = await Promise.all([
       repository.listProjectsByTenant(tenantId),
       repository.listFieldReportsByTenant(tenantId),
+      repository.listFileRecordsByTenant(tenantId),
       typeof repository.getPortalConfigurationByTenant === "function"
         ? repository.getPortalConfigurationByTenant(tenantId)
         : null,
@@ -1007,7 +1256,9 @@ async function routeApiRequest({
       return buildClientPortalView({
         project,
         approvedReports,
-        files: syntheticFileRecords.filter((file) => file.tenantId === tenantId && file.projectId === project.id),
+        files: fileRecords.filter(
+          (file) => file.tenantId === tenantId && file.projectId === project.id && file.status === "ready" && file.clientVisible === true
+        ),
         updates: [
           ...syntheticPortalUpdates.filter(
             (update) => update.tenantId === tenantId && update.projectId === project.id

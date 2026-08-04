@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 
 import { createWebServer } from "../src/server.js";
 import { assertWebRuntimeConfig, loadWebRuntimeConfig, publicWebRuntimeConfig } from "../src/runtime-config.js";
-import { PRIVATE_PRODUCTION_ENV_VARS } from "../../../packages/production-config/src/index.js";
+import {
+  PRIVATE_PRODUCTION_ENV_VARS,
+  SERVER_ONLY_STORAGE_ENV_VARS
+} from "../../../packages/production-config/src/index.js";
 
 const productionEnv = {
   NODE_ENV: "production",
@@ -67,7 +70,10 @@ test("web server exposes only the non-secret managed IdP runtime manifest", () =
   const secretValues = Object.fromEntries(
     PRIVATE_PRODUCTION_ENV_VARS.map((name, index) => [name, `private-sentinel-${index}-must-not-be-public`])
   );
-  const server = createWebServer({ env: { ...productionEnv, ...secretValues } });
+  const storageValues = Object.fromEntries(
+    SERVER_ONLY_STORAGE_ENV_VARS.map((name, index) => [name, `storage-sentinel-${index}-must-not-be-public`])
+  );
+  const server = createWebServer({ env: { ...productionEnv, ...secretValues, ...storageValues } });
   let status;
   let headers;
   let responseBody;
@@ -88,5 +94,8 @@ test("web server exposes only the non-secret managed IdP runtime manifest", () =
   const serialized = JSON.stringify(body);
   for (const secret of Object.values(secretValues)) {
     assert.equal(serialized.includes(secret), false);
+  }
+  for (const value of Object.values(storageValues)) {
+    assert.equal(serialized.includes(value), false);
   }
 });

@@ -307,6 +307,87 @@
         }
       }
     },
+    "/v1/tenants/{tenantId}/files": {
+      "get": {
+        "summary": "List tenant-scoped file metadata without object-storage keys",
+        "parameters": [ { "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string" } } ],
+        "responses": {
+          "200": { "description": "tenant file metadata" },
+          "403": { "description": "tenant mismatch or unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/files/upload-intents": {
+      "post": {
+        "summary": "Validate file metadata and create a controlled local or presigned object-storage upload target",
+        "parameters": [ { "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string" } } ],
+        "responses": {
+          "201": { "description": "pending file metadata and upload target" },
+          "400": { "description": "unsafe MIME, size, filename, or association", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } },
+          "403": { "description": "tenant mismatch or unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/files/{fileId}": {
+      "delete": {
+        "summary": "Delete tenant-scoped object bytes and retain soft-deleted audit metadata",
+        "parameters": [
+          { "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "fileId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "soft-deleted file metadata" },
+          "403": { "description": "tenant mismatch or unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } },
+          "404": { "description": "not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/files/{fileId}/complete": {
+      "post": {
+        "summary": "Verify uploaded object tenant/type/size and atomically persist ready metadata plus audit evidence",
+        "parameters": [
+          { "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "fileId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "completed file metadata" },
+          "400": { "description": "object is absent or does not match the upload intent", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } },
+          "404": { "description": "not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/files/{fileId}/download": {
+      "get": {
+        "summary": "Create a short-lived signed download target or authenticated local proxy target",
+        "parameters": [
+          { "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "fileId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "controlled download target" },
+          "403": { "description": "tenant mismatch or unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } },
+          "404": { "description": "not found or not client-visible", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/files/{fileId}/content": {
+      "get": {
+        "summary": "Read file bytes through the authenticated local-development proxy only",
+        "parameters": [
+          { "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "fileId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "file bytes" }, "404": { "description": "not found or object-storage mode" } }
+      },
+      "put": {
+        "summary": "Upload file bytes through the authenticated local-development proxy only",
+        "parameters": [
+          { "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "fileId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": { "200": { "description": "completed local file metadata" }, "400": { "description": "invalid bytes or object-storage mode" } }
+      }
+    },
     "/v1/tenants/{tenantId}/client-portal": {
       "get": {
         "summary": "Read the staged client-facing portal (approved reports, files, updates, staged payment placeholder)",

@@ -90,6 +90,12 @@ export function createSqliteRepository({ filePath }) {
     insert: (db) => db.prepare("INSERT INTO field_reports (id, tenant_id, payload) VALUES (?, ?, ?)"),
     values: (row) => [row.id, row.tenantId, JSON.stringify(row)]
   });
+  seedTable(database, "file_records", seedState.fileRecords, {
+    insert: (db) => db.prepare(
+      "INSERT INTO file_records (id, tenant_id, project_id, field_report_id, status, payload) VALUES (?, ?, ?, ?, ?, ?)"
+    ),
+    values: (row) => [row.id, row.tenantId, row.projectId, row.fieldReportId ?? null, row.status, JSON.stringify(row)]
+  });
 
   return {
     filePath,
@@ -338,6 +344,67 @@ export function createSqliteRepository({ filePath }) {
         JSON.stringify(report)
       );
       return cloneState(report);
+    },
+    listFileRecordsByTenant(tenantId) {
+      return parseRows(database.prepare("SELECT payload FROM file_records WHERE tenant_id = ? ORDER BY rowid ASC").all(tenantId));
+    },
+    getFileRecordById(fileId) {
+      return parseRow(database.prepare("SELECT payload FROM file_records WHERE id = ?").get(fileId));
+    },
+    createFileRecord(fileRecord) {
+      const exists = database.prepare("SELECT 1 FROM file_records WHERE id = ?").get(fileRecord.id);
+      if (exists) throw new Error("File id already exists.");
+      database.prepare(
+        "INSERT INTO file_records (id, tenant_id, project_id, field_report_id, status, payload) VALUES (?, ?, ?, ?, ?, ?)"
+      ).run(
+        fileRecord.id,
+        fileRecord.tenantId,
+        fileRecord.projectId,
+        fileRecord.fieldReportId ?? null,
+        fileRecord.status,
+        JSON.stringify(fileRecord)
+      );
+      return cloneState(fileRecord);
+    },
+    saveFileRecord(fileRecord) {
+      const result = database.prepare(
+        "UPDATE file_records SET tenant_id = ?, project_id = ?, field_report_id = ?, status = ?, payload = ? WHERE id = ?"
+      ).run(
+        fileRecord.tenantId,
+        fileRecord.projectId,
+        fileRecord.fieldReportId ?? null,
+        fileRecord.status,
+        JSON.stringify(fileRecord),
+        fileRecord.id
+      );
+      if (result.changes !== 1) throw new Error("File record not found.");
+      return cloneState(fileRecord);
+    },
+    finalizeFileRecord({ fileRecord, auditEvent }) {
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        const result = database.prepare(
+          "UPDATE file_records SET tenant_id = ?, project_id = ?, field_report_id = ?, status = ?, payload = ? WHERE id = ?"
+        ).run(
+          fileRecord.tenantId,
+          fileRecord.projectId,
+          fileRecord.fieldReportId ?? null,
+          fileRecord.status,
+          JSON.stringify(fileRecord),
+          fileRecord.id
+        );
+        if (result.changes !== 1) throw new Error("File record not found.");
+        database.prepare("INSERT INTO audit_events (event_id, tenant_id, payload) VALUES (?, ?, ?)").run(
+          auditEvent.eventId,
+          auditEvent.tenantId,
+          JSON.stringify(auditEvent)
+        );
+        database.exec("COMMIT");
+        return cloneState(fileRecord);
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
     },
     listAuditEventsByTenant(tenantId) {
       return parseRows(database.prepare("SELECT payload FROM audit_events WHERE tenant_id = ? ORDER BY rowid ASC").all(tenantId));

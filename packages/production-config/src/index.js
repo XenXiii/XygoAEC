@@ -1,3 +1,5 @@
+import { storageConfigurationFromEnvironment } from "../../file-storage/src/index.js";
+
 const PRODUCTION = "production";
 const SECURE_POSTGRES_SSL_MODES = new Set(["require", "verify-ca", "verify-full"]);
 const RESERVED_PRODUCTION_HOST_SUFFIXES = Object.freeze([
@@ -61,6 +63,22 @@ export const PRIVATE_PRODUCTION_ENV_VARS = Object.freeze([
   "XYGO_OIDC_BINDING_ADMIN_TOKEN"
 ]);
 
+export const SERVER_ONLY_STORAGE_ENV_VARS = Object.freeze([
+  "XYGO_STORAGE_DRIVER",
+  "XYGO_STORAGE_BUCKET",
+  "XYGO_STORAGE_REGION",
+  "XYGO_STORAGE_ENDPOINT",
+  "XYGO_STORAGE_ACCESS_KEY_ID",
+  "XYGO_STORAGE_SECRET_ACCESS_KEY",
+  "XYGO_STORAGE_FORCE_PATH_STYLE",
+  "XYGO_STORAGE_PUBLIC_ACCESS",
+  "XYGO_STORAGE_SERVER_SIDE_ENCRYPTION",
+  "XYGO_STORAGE_MAX_FILE_BYTES",
+  "XYGO_STORAGE_ALLOWED_MIME_TYPES",
+  "XYGO_STORAGE_SIGNED_URL_TTL_SEC",
+  "XYGO_STORAGE_RETENTION_DAYS"
+]);
+
 const API_REQUIRED_ENV_VARS = Object.freeze([
   "NODE_ENV",
   "STAGED_MODE",
@@ -91,6 +109,13 @@ const API_REQUIRED_ENV_VARS = Object.freeze([
   "XYGO_STORAGE_ENDPOINT",
   "XYGO_STORAGE_ACCESS_KEY_ID",
   "XYGO_STORAGE_SECRET_ACCESS_KEY",
+  "XYGO_STORAGE_FORCE_PATH_STYLE",
+  "XYGO_STORAGE_PUBLIC_ACCESS",
+  "XYGO_STORAGE_SERVER_SIDE_ENCRYPTION",
+  "XYGO_STORAGE_MAX_FILE_BYTES",
+  "XYGO_STORAGE_ALLOWED_MIME_TYPES",
+  "XYGO_STORAGE_SIGNED_URL_TTL_SEC",
+  "XYGO_STORAGE_RETENTION_DAYS",
   "XYGO_OUTBOX_BACKEND",
   "XYGO_MONITORING_OTLP_ENDPOINT",
   "XYGO_MONITORING_AUTH_TOKEN"
@@ -123,6 +148,13 @@ const WORKER_REQUIRED_ENV_VARS = Object.freeze([
   "XYGO_STORAGE_ENDPOINT",
   "XYGO_STORAGE_ACCESS_KEY_ID",
   "XYGO_STORAGE_SECRET_ACCESS_KEY",
+  "XYGO_STORAGE_FORCE_PATH_STYLE",
+  "XYGO_STORAGE_PUBLIC_ACCESS",
+  "XYGO_STORAGE_SERVER_SIDE_ENCRYPTION",
+  "XYGO_STORAGE_MAX_FILE_BYTES",
+  "XYGO_STORAGE_ALLOWED_MIME_TYPES",
+  "XYGO_STORAGE_SIGNED_URL_TTL_SEC",
+  "XYGO_STORAGE_RETENTION_DAYS",
   "XYGO_OUTBOX_BACKEND",
   "XYGO_WORKER_INTERVAL_MS",
   "XYGO_WORKER_MAX_ATTEMPTS",
@@ -319,8 +351,11 @@ function assertBackendServices(env, service) {
   requireInteger(env, "XYGO_SMTP_PORT", service, { maximum: 65_535 });
   requireSecret(env, "XYGO_SMTP_PASSWORD", service, 16);
   requireExact(env, "XYGO_STORAGE_DRIVER", "s3", service);
-  requireHttpsUrl(env, "XYGO_STORAGE_ENDPOINT", service);
-  requireSecret(env, "XYGO_STORAGE_SECRET_ACCESS_KEY", service, 16);
+  try {
+    storageConfigurationFromEnvironment(env);
+  } catch (error) {
+    fail(service, error.message);
+  }
   requireExact(env, "XYGO_OUTBOX_BACKEND", "postgres", service);
   requireHttpsUrl(env, "XYGO_MONITORING_OTLP_ENDPOINT", service);
   requireSecret(env, "XYGO_MONITORING_AUTH_TOKEN", service, 16);

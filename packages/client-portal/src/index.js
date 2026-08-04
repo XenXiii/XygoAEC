@@ -30,7 +30,10 @@ export function buildClientPortalView({ project, approvedReports = [], files = [
     files: files.map((file) => ({
       id: file.id,
       name: file.originalFilename ?? file.name ?? file.id,
-      fileClass: file.fileClass ?? "document"
+      fileClass: file.fileClass ?? "document",
+      mimeType: file.mimeType ?? null,
+      sizeBytes: file.sizeBytes ?? null,
+      downloadPath: `/v1/tenants/${encodeURIComponent(project.tenantId)}/files/${encodeURIComponent(file.id)}/download`
     })),
     updates: [...updates]
       .sort((a, b) => String(a.at ?? "").localeCompare(String(b.at ?? "")))
