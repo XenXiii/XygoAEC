@@ -1,5 +1,21 @@
 const PRODUCTION = "production";
 const SECURE_POSTGRES_SSL_MODES = new Set(["require", "verify-ca", "verify-full"]);
+const RESERVED_PRODUCTION_HOST_SUFFIXES = Object.freeze([
+  ".example",
+  ".invalid",
+  ".test",
+  ".localhost",
+  ".local",
+  ".example.com",
+  ".example.net",
+  ".example.org"
+]);
+const WORKER_NUMERIC_LIMITS = Object.freeze({
+  XYGO_WORKER_INTERVAL_MS: { minimum: 100, maximum: 60_000 },
+  XYGO_WORKER_MAX_ATTEMPTS: { minimum: 1, maximum: 20 },
+  XYGO_WORKER_BASE_BACKOFF_MS: { minimum: 100, maximum: 900_000 },
+  XYGO_WORKER_CONCURRENCY: { minimum: 1, maximum: 64 }
+});
 
 export const PUBLIC_WEB_RUNTIME_ENV_VARS = Object.freeze([
   "XYGO_DEPLOY_ENVIRONMENT",
@@ -112,12 +128,41 @@ function fail(service, message) {
   throw new Error(`Production ${service} configuration error: ${message}`);
 }
 
+function isPlaceholderValue(value) {
+  const normalized = normalizedString(value);
+  return Boolean(
+    normalized && (
+      /^<.*>$/.test(normalized) ||
+      /^(change-?me|replace-?me|example|placeholder|sample|todo|tbd)(?:$|[-_: ])/i.test(normalized) ||
+      /^your(?:$|[-_: ])/i.test(normalized)
+    )
+  );
+}
+
+function requireProductionHostname(hostname, name, service) {
+  const normalized = String(hostname ?? "").toLowerCase().replace(/\.$/, "");
+  const reserved =
+    normalized === "localhost" ||
+    normalized === "example.com" ||
+    normalized === "example.net" ||
+    normalized === "example.org" ||
+    normalized === "0.0.0.0" ||
+    normalized.startsWith("127.") ||
+    normalized === "[::1]" ||
+    normalized === "[::]" ||
+    normalized.split(".").some((label) => /^(example|sample|placeholder)(?:$|-)/.test(label)) ||
+    RESERVED_PRODUCTION_HOST_SUFFIXES.some((suffix) => normalized.endsWith(suffix));
+  if (reserved) {
+    fail(service, `${name} must not use a reserved example, test, local, invalid, or loopback hostname.`);
+  }
+}
+
 function requireValues(env, names, service) {
   const missing = names.filter((name) => !normalizedString(env[name]));
   if (missing.length > 0) {
     fail(service, `missing required environment variables: ${missing.join(", ")}.`);
   }
-  const placeholders = names.filter((name) => /^<.*>$/.test(normalizedString(env[name])));
+  const placeholders = names.filter((name) => isPlaceholderValue(env[name]));
   if (placeholders.length > 0) {
     fail(service, `placeholder values are forbidden for: ${placeholders.join(", ")}.`);
   }
@@ -146,6 +191,7 @@ function requireHttpsUrl(env, name, service, { allowQuery = false } = {}) {
   ) {
     fail(service, `${name} must be an HTTPS URL without credentials, a fragment, or unsupported URL components.`);
   }
+  requireProductionHostname(url.hostname, name, service);
 }
 
 function requirePostgresUrl(env, service) {
@@ -158,6 +204,7 @@ function requirePostgresUrl(env, service) {
   if (!new Set(["postgres:", "postgresql:"]).has(url.protocol) || !url.hostname) {
     fail(service, "XYGO_API_PG_URL must use the postgres or postgresql scheme and name a host.");
   }
+  requireProductionHostname(url.hostname, "XYGO_API_PG_URL", service);
   if (!SECURE_POSTGRES_SSL_MODES.has(url.searchParams.get("sslmode"))) {
     fail(service, "XYGO_API_PG_URL must set sslmode=require, verify-ca, or verify-full.");
   }
@@ -168,8 +215,7 @@ function requireSecret(env, name, service, minimumLength = 32) {
   if (
     !secret ||
     secret.length < minimumLength ||
-    /^<.*>$/.test(secret) ||
-    /^(change-?me|replace-?me|example|placeholder)/i.test(secret)
+    isPlaceholderValue(secret)
   ) {
     fail(service, `${name} must be a non-placeholder secret of at least ${minimumLength} characters.`);
   }
@@ -188,6 +234,29 @@ function requireEmail(env, service) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value ?? "")) {
     fail(service, "XYGO_EMAIL_FROM must be a valid email address.");
   }
+  requireProductionHostname(value.slice(value.lastIndexOf("@") + 1), "XYGO_EMAIL_FROM", service);
+}
+
+function requireHostValue(env, name, service) {
+  const value = normalizedString(env[name]);
+  if (!/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/i.test(value ?? "") || value.includes("..")) {
+    fail(service, `${name} must be a hostname without a scheme, credentials, path, or port.`);
+  }
+  requireProductionHostname(value, name, service);
+}
+
+function rejectReservedUrlAudience(env, service) {
+  const value = normalizedString(env.XYGO_OIDC_AUDIENCE);
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    // OIDC audiences may be opaque identifiers rather than URLs.
+    return;
+  }
+  if (url.hostname) {
+    requireProductionHostname(url.hostname, "XYGO_OIDC_AUDIENCE", service);
+  }
 }
 
 function assertProductionBaseline(env, names, service) {
@@ -204,6 +273,7 @@ function assertBackendServices(env, service) {
   requireSecret(env, "XYGO_AUDIT_SIGNING_KEY", service);
   requireExact(env, "XYGO_EMAIL_TRANSPORT", "smtp", service);
   requireEmail(env, service);
+  requireHostValue(env, "XYGO_SMTP_HOST", service);
   requireInteger(env, "XYGO_SMTP_PORT", service, { maximum: 65_535 });
   requireSecret(env, "XYGO_SMTP_PASSWORD", service, 16);
   requireExact(env, "XYGO_STORAGE_DRIVER", "s3", service);
@@ -226,6 +296,7 @@ export function assertProductionApiEnvironment(env = process.env) {
   requireHttpsUrl(env, "XYGO_OIDC_JWKS_URI", "API", { allowQuery: true });
   requireHttpsUrl(env, "XYGO_WEB_APP_URL", "API");
   requireHttpsUrl(env, "XYGO_WEB_API_BASE_URL", "API");
+  rejectReservedUrlAudience(env, "API");
   requireInteger(env, "XYGO_OIDC_CLOCK_TOLERANCE_SEC", "API", { minimum: 0, maximum: 300 });
   assertBackendServices(env, "API");
 }
@@ -236,6 +307,7 @@ export function assertProductionWebEnvironment(env = process.env) {
   requireHttpsUrl(env, "XYGO_WEB_APP_URL", "web");
   requireHttpsUrl(env, "XYGO_WEB_API_BASE_URL", "web");
   requireHttpsUrl(env, "XYGO_OIDC_ISSUER", "web");
+  rejectReservedUrlAudience(env, "web");
   requireHttpsUrl(env, "XYGO_WEB_OIDC_AUTHORIZATION_ENDPOINT", "web", { allowQuery: true });
   requireHttpsUrl(env, "XYGO_WEB_OIDC_TOKEN_ENDPOINT", "web", { allowQuery: true });
   requireHttpsUrl(env, "XYGO_WEB_OIDC_END_SESSION_ENDPOINT", "web", { allowQuery: true });
@@ -246,8 +318,7 @@ export function assertProductionWorkerEnvironment(env = process.env) {
   if (!assertProductionBaseline(env, WORKER_REQUIRED_ENV_VARS, "worker")) return;
   requireHttpsUrl(env, "XYGO_WEB_APP_URL", "worker");
   assertBackendServices(env, "worker");
-  requireInteger(env, "XYGO_WORKER_INTERVAL_MS", "worker", { maximum: 300_000 });
-  requireInteger(env, "XYGO_WORKER_MAX_ATTEMPTS", "worker", { maximum: 100 });
-  requireInteger(env, "XYGO_WORKER_BASE_BACKOFF_MS", "worker", { maximum: 3_600_000 });
-  requireInteger(env, "XYGO_WORKER_CONCURRENCY", "worker", { maximum: 1_000 });
+  for (const [name, bounds] of Object.entries(WORKER_NUMERIC_LIMITS)) {
+    requireInteger(env, name, "worker", bounds);
+  }
 }

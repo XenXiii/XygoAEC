@@ -12,16 +12,16 @@ const productionEnv = {
   XYGO_RELEASE: "0123456789abcdef",
   XYGO_AUTH_MODE: "oidc",
   XYGO_OIDC_PROVIDER: "auth0",
-  XYGO_OIDC_ISSUER: "https://tenant.example-idp.com/",
-  XYGO_OIDC_AUDIENCE: "https://api.xygo.example",
-  XYGO_WEB_APP_URL: "https://app.xygo.example",
-  XYGO_WEB_API_BASE_URL: "https://api.xygo.example",
-  XYGO_WEB_OIDC_CLIENT_ID: "public-client-id",
-  XYGO_WEB_OIDC_AUTHORIZATION_ENDPOINT: "https://tenant.example-idp.com/authorize",
-  XYGO_WEB_OIDC_TOKEN_ENDPOINT: "https://tenant.example-idp.com/oauth/token",
-  XYGO_WEB_OIDC_END_SESSION_ENDPOINT: "https://tenant.example-idp.com/logout",
+  XYGO_OIDC_ISSUER: "https://idp.production.xygoaec.com/",
+  XYGO_OIDC_AUDIENCE: "https://api.production.xygoaec.com",
+  XYGO_WEB_APP_URL: "https://app.production.xygoaec.com",
+  XYGO_WEB_API_BASE_URL: "https://api.production.xygoaec.com",
+  XYGO_WEB_OIDC_CLIENT_ID: "xygo-production-public-client",
+  XYGO_WEB_OIDC_AUTHORIZATION_ENDPOINT: "https://idp.production.xygoaec.com/authorize",
+  XYGO_WEB_OIDC_TOKEN_ENDPOINT: "https://idp.production.xygoaec.com/oauth/token",
+  XYGO_WEB_OIDC_END_SESSION_ENDPOINT: "https://idp.production.xygoaec.com/logout",
   XYGO_WEB_OIDC_SCOPES: "openid profile email",
-  XYGO_WEB_MONITORING_ENDPOINT: "https://browser-monitoring.xygo.example/events"
+  XYGO_WEB_MONITORING_ENDPOINT: "https://browser-monitoring.production.xygoaec.com/events"
 };
 
 test("production web startup fails closed without managed OIDC configuration", () => {
@@ -34,11 +34,11 @@ test("production web startup fails closed without managed OIDC configuration", (
     /XYGO_WEB_OIDC_TOKEN_ENDPOINT/
   );
   assert.throws(
-    () => createWebServer({ env: { ...productionEnv, XYGO_WEB_API_BASE_URL: "http:\/\/api.xygo.example" } }),
+    () => createWebServer({ env: { ...productionEnv, XYGO_WEB_API_BASE_URL: "http:\/\/api.production.xygoaec.com" } }),
     /XYGO_WEB_API_BASE_URL must be an HTTPS URL/
   );
   assert.throws(
-    () => createWebServer({ env: { ...productionEnv, XYGO_WEB_APP_URL: "https://app.xygo.example?bad=callback" } }),
+    () => createWebServer({ env: { ...productionEnv, XYGO_WEB_APP_URL: "https://app.production.xygoaec.com?bad=callback" } }),
     /XYGO_WEB_APP_URL must be an HTTPS URL/
   );
   assert.throws(
@@ -54,10 +54,10 @@ test("public runtime config fixes browser auth to code plus PKCE and memory toke
   assert.equal(publicConfig.auth.responseType, "code");
   assert.equal(publicConfig.auth.pkceMethod, "S256");
   assert.equal(publicConfig.auth.accessTokenStorage, "memory");
-  assert.equal(publicConfig.auth.redirectUri, "https://app.xygo.example/auth/callback");
+  assert.equal(publicConfig.auth.redirectUri, "https://app.production.xygoaec.com/auth/callback");
   assert.equal(publicConfig.environment, "production");
   assert.equal(publicConfig.release, "0123456789abcdef");
-  assert.equal(publicConfig.monitoring.endpoint, "https://browser-monitoring.xygo.example/events");
+  assert.equal(publicConfig.monitoring.endpoint, "https://browser-monitoring.production.xygoaec.com/events");
   assert.ok(publicConfig.auth.scopes.includes("openid"));
   assert.equal("clientSecret" in publicConfig.auth, false);
   assert.equal("internalSecret" in publicConfig.auth, false);
@@ -84,7 +84,7 @@ test("web server exposes only the non-secret managed IdP runtime manifest", () =
   assert.equal(headers["cache-control"], "no-store");
   const body = JSON.parse(responseBody);
   assert.equal(body.auth.provider, "auth0");
-  assert.equal(body.apiBaseUrl, "https://api.xygo.example");
+  assert.equal(body.apiBaseUrl, "https://api.production.xygoaec.com");
   const serialized = JSON.stringify(body);
   for (const secret of Object.values(secretValues)) {
     assert.equal(serialized.includes(secret), false);

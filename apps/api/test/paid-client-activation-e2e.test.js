@@ -14,7 +14,7 @@ if (requirePostgres && !PG_URL) {
 }
 const skip = PG_URL ? false : "set XYGO_TEST_PG_URL to run the paid-client activation E2E test";
 
-const OIDC_ISSUER = "https://issuer.activation-e2e.test/";
+const OIDC_ISSUER = "https://issuer.activation-e2e.xygoaec.com/";
 const OIDC_AUDIENCE = "xygo-api";
 const OIDC_KID = "activation-e2e-key";
 const { publicKey, privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -109,7 +109,7 @@ test("paid-client activation works end to end through OIDC, HTTP, and canonical 
     XYGO_OIDC_PROVIDER: "other-managed-oidc",
     XYGO_OIDC_ISSUER: OIDC_ISSUER,
     XYGO_OIDC_AUDIENCE: OIDC_AUDIENCE,
-    XYGO_OIDC_JWKS_URI: "https://issuer.activation-e2e.test/.well-known/jwks.json"
+    XYGO_OIDC_JWKS_URI: "https://issuer.activation-e2e.xygoaec.com/.well-known/jwks.json"
   });
 
   const repository = createPostgresRepository({

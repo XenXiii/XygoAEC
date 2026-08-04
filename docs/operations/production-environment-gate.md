@@ -6,7 +6,8 @@ process listens or starts its work loop. Local and staged developer defaults rem
 `NODE_ENV` is not `production` and `STAGED_MODE` is not `false`.
 
 Start from [`config/production.env.example`](../../config/production.env.example). It contains names,
-examples, and deliberately invalid secret placeholders only. Do not copy secrets into the repository,
+reserved example domains, and deliberately invalid placeholders only. The production gate rejects
+those values; replace them with reviewed deployment values. Do not copy secrets into the repository,
 client bundles, build arguments, logs, or pull-request settings. Inject private values at runtime from
 the approved secret manager.
 
@@ -72,14 +73,18 @@ The API requires `XYGO_WEB_APP_URL`, `XYGO_WEB_API_BASE_URL`, `XYGO_AUTH_MODE=oi
 The worker requires the shared runtime posture, `XYGO_WEB_APP_URL`, Postgres, audit, email, storage,
 outbox, and server-side monitoring values above. It additionally requires:
 
-- `XYGO_WORKER_INTERVAL_MS`: integer from 1 through 300000
-- `XYGO_WORKER_MAX_ATTEMPTS`: integer from 1 through 100
-- `XYGO_WORKER_BASE_BACKOFF_MS`: integer from 1 through 3600000
-- `XYGO_WORKER_CONCURRENCY`: integer from 1 through 1000
+- `XYGO_WORKER_INTERVAL_MS`: integer from 100 through 60000
+- `XYGO_WORKER_MAX_ATTEMPTS`: integer from 1 through 20
+- `XYGO_WORKER_BASE_BACKOFF_MS`: integer from 100 through 900000
+- `XYGO_WORKER_CONCURRENCY`: integer from 1 through 64
 
 The current worker/outbox and storage implementations are not made production-capable by this
 contract. These variables are validation placeholders for the later durable worker/outbox and tenant
 file-storage slices. A green configuration-gate test is not deployment approval.
+
+Production URLs, PostgreSQL URLs, SMTP hosts, and email domains reject IANA-reserved example, test,
+and invalid names, local or loopback names, and obvious placeholder labels. This prevents the example
+manifest from becoming bootable after only its secret placeholders are replaced.
 
 ## Private values and rotation
 

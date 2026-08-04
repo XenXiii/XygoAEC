@@ -52,7 +52,7 @@ test("every process gate fails when any of its required values is absent", () =>
 test("unsafe backend settings fail closed", () => {
   assert.throws(
     () => assertProductionApiEnvironment(validProductionEnvironment({
-      XYGO_API_PG_URL: "postgresql://xygo:password@db.xygo.invalid/xygo"
+      XYGO_API_PG_URL: "postgresql://xygo:password@db.production.xygoaec.com/xygo"
     })),
     /sslmode/
   );
@@ -70,13 +70,13 @@ test("unsafe backend settings fail closed", () => {
   );
   assert.throws(
     () => assertProductionWorkerEnvironment(validProductionEnvironment({
-      XYGO_STORAGE_ENDPOINT: "http://storage.xygo.invalid"
+      XYGO_STORAGE_ENDPOINT: "http://storage.production.xygoaec.com"
     })),
     /XYGO_STORAGE_ENDPOINT must be an HTTPS URL/
   );
   assert.throws(
     () => assertProductionWebEnvironment(validProductionEnvironment({
-      XYGO_WEB_APP_URL: "http://app.xygo.invalid"
+      XYGO_WEB_APP_URL: "http://app.production.xygoaec.com"
     })),
     /XYGO_WEB_APP_URL must be an HTTPS URL/
   );
@@ -86,6 +86,86 @@ test("unsafe backend settings fail closed", () => {
     })),
     /placeholder values are forbidden.*XYGO_WEB_OIDC_CLIENT_ID/
   );
+});
+
+test("reserved example hosts and generic placeholder values fail closed", () => {
+  assert.throws(
+    () => assertProductionApiEnvironment(validProductionEnvironment({
+      XYGO_API_PG_URL: "postgresql://xygo:password@db.xygo.invalid/xygo?sslmode=verify-full"
+    })),
+    /XYGO_API_PG_URL must not use a reserved example, test, local, invalid, or loopback hostname/
+  );
+  assert.throws(
+    () => assertProductionWebEnvironment(validProductionEnvironment({
+      XYGO_WEB_APP_URL: "https://app.xygo.example"
+    })),
+    /XYGO_WEB_APP_URL must not use a reserved example, test, local, invalid, or loopback hostname/
+  );
+  assert.throws(
+    () => assertProductionApiEnvironment(validProductionEnvironment({
+      XYGO_OIDC_AUDIENCE: "https://api.xygo.example"
+    })),
+    /XYGO_OIDC_AUDIENCE must not use a reserved example, test, local, invalid, or loopback hostname/
+  );
+  assert.throws(
+    () => assertProductionWorkerEnvironment(validProductionEnvironment({
+      XYGO_SMTP_HOST: "smtp.example.com"
+    })),
+    /XYGO_SMTP_HOST must not use a reserved example, test, local, invalid, or loopback hostname/
+  );
+  assert.throws(
+    () => assertProductionWebEnvironment(validProductionEnvironment({ XYGO_RELEASE: "example-release" })),
+    /placeholder values are forbidden.*XYGO_RELEASE/
+  );
+  assert.throws(
+    () => assertProductionWebEnvironment(validProductionEnvironment({
+      XYGO_WEB_OIDC_CLIENT_ID: "placeholder-client-id"
+    })),
+    /placeholder values are forbidden.*XYGO_WEB_OIDC_CLIENT_ID/
+  );
+});
+
+test("worker and OIDC clock numeric bounds reject unsafe extremes", () => {
+  assert.doesNotThrow(() => assertProductionWorkerEnvironment(validProductionEnvironment({
+    XYGO_WORKER_INTERVAL_MS: "100",
+    XYGO_WORKER_MAX_ATTEMPTS: "1",
+    XYGO_WORKER_BASE_BACKOFF_MS: "100",
+    XYGO_WORKER_CONCURRENCY: "1"
+  })));
+  assert.doesNotThrow(() => assertProductionWorkerEnvironment(validProductionEnvironment({
+    XYGO_WORKER_INTERVAL_MS: "60000",
+    XYGO_WORKER_MAX_ATTEMPTS: "20",
+    XYGO_WORKER_BASE_BACKOFF_MS: "900000",
+    XYGO_WORKER_CONCURRENCY: "64"
+  })));
+  assert.doesNotThrow(() => assertProductionApiEnvironment(validProductionEnvironment({
+    XYGO_OIDC_CLOCK_TOLERANCE_SEC: "0"
+  })));
+  assert.doesNotThrow(() => assertProductionApiEnvironment(validProductionEnvironment({
+    XYGO_OIDC_CLOCK_TOLERANCE_SEC: "300"
+  })));
+
+  for (const [name, values] of Object.entries({
+    XYGO_WORKER_INTERVAL_MS: ["99", "60001"],
+    XYGO_WORKER_MAX_ATTEMPTS: ["0", "21"],
+    XYGO_WORKER_BASE_BACKOFF_MS: ["99", "900001"],
+    XYGO_WORKER_CONCURRENCY: ["0", "65"]
+  })) {
+    for (const value of values) {
+      assert.throws(
+        () => assertProductionWorkerEnvironment(validProductionEnvironment({ [name]: value })),
+        new RegExp(name)
+      );
+    }
+  }
+  for (const value of ["-1", "301"]) {
+    assert.throws(
+      () => assertProductionApiEnvironment(validProductionEnvironment({
+        XYGO_OIDC_CLOCK_TOLERANCE_SEC: value
+      })),
+      /XYGO_OIDC_CLOCK_TOLERANCE_SEC/
+    );
+  }
 });
 
 test("public browser variables and private secrets are explicitly disjoint", () => {
