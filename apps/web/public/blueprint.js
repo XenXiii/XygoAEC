@@ -1,3 +1,5 @@
+import { authenticatedFetch } from "/auth-client.js";
+
 const tenantSelect = document.querySelector("#tenant-select");
 const apiBaseUrlInput = document.querySelector("#api-base-url");
 const workspaceControls = document.querySelector("#workspace-controls");
@@ -42,7 +44,7 @@ function headers() {
 }
 
 async function getJson(url) {
-  const response = await fetch(url, { headers: headers() });
+  const response = await authenticatedFetch(url, { headers: headers() });
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok) {
@@ -277,7 +279,7 @@ async function loadWorkspace() {
 
 async function updateDisposition(findingId, nextDisposition, relatedIssueId = null) {
   const apiBaseUrl = apiBaseUrlInput.value.replace(/\/+$/, "");
-  const response = await fetch(`${apiBaseUrl}/v1/tenants/${tenantSelect.value}/ai-findings/${findingId}/disposition`, {
+  const response = await authenticatedFetch(`${apiBaseUrl}/v1/tenants/${tenantSelect.value}/ai-findings/${findingId}/disposition`, {
     method: "POST",
     headers: headers(),
     body: JSON.stringify({ nextDisposition, relatedIssueId })
@@ -307,7 +309,7 @@ async function createCoordinationIssue(event) {
   const projectId = state.workspace?.projects?.[0]?.id;
   const issueId = `issue-${Date.now()}`;
 
-  const createResponse = await fetch(`${apiBaseUrl}/v1/tenants/${tenantSelect.value}/issues`, {
+  const createResponse = await authenticatedFetch(`${apiBaseUrl}/v1/tenants/${tenantSelect.value}/issues`, {
     method: "POST",
     headers: headers(),
     body: JSON.stringify({

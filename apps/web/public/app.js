@@ -1,4 +1,5 @@
 import { createBoardSections, createSummaryCards, formatStatusTone } from "/src/view-models.js";
+import { authenticatedEventSourceUrl, authenticatedFetch } from "/auth-client.js";
 
 const controls = document.querySelector("#controls");
 const tenantSelect = document.querySelector("#tenant-select");
@@ -13,7 +14,7 @@ const boardTemplate = document.querySelector("#board-template");
 let activeStream = null;
 
 async function getJson(url, tenantId) {
-  const response = await fetch(url, {
+  const response = await authenticatedFetch(url, {
     headers: {
       "x-staged-tenant-id": tenantId
     }
@@ -90,14 +91,16 @@ function setStatus(message, tone = "neutral") {
   statusRow.appendChild(state);
 }
 
-function connectStream(apiBaseUrl, tenantId) {
+async function connectStream(apiBaseUrl, tenantId) {
   if (activeStream) {
     activeStream.close();
   }
 
-  const streamUrl = `${apiBaseUrl}/v1/tenants/${tenantId}/events/stream?stagedTenantId=${encodeURIComponent(tenantId)}`;
+  const streamUrl = await authenticatedEventSourceUrl(
+    `${apiBaseUrl}/v1/tenants/${tenantId}/events/stream?stagedTenantId=${encodeURIComponent(tenantId)}`
+  );
   const eventSource = new EventSource(streamUrl, {
-    withCredentials: false
+    withCredentials: true
   });
 
   liveIndicator.textContent = "Live updates connecting";
@@ -145,7 +148,7 @@ async function refresh() {
       aiFindings: aiFindings.items
     });
     setStatus(`Loaded staged tenant ${tenantId}.`);
-    connectStream(apiBaseUrl, tenantId);
+    await connectStream(apiBaseUrl, tenantId);
   } catch (error) {
     const isConnectionFailure =
       /Failed to fetch|NetworkError|Load failed|fetch/i.test(error.message) ||

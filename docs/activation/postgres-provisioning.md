@@ -45,6 +45,7 @@ in `schema_migrations`:
 5. `0005_durable_outbox.sql`
 6. `0006_email_monitoring.sql`
 7. `0007_email_suppressions.sql`
+8. `0008_web_auth_sessions.sql`
 
 The second migration adds canonical users, paid-client role assignments, business profiles, portal
 configuration, portal seed data, and provisioning events. Provisioning also uses the existing
@@ -62,6 +63,9 @@ for retry, dead-letter, replay, readiness, and shutdown behavior.
 The sixth migration adds tenant-scoped email delivery/status records, verified provider-event
 deduplication, and worker heartbeats. See the
 [Email Delivery and Monitoring Operations Runbook](../operations/email-monitoring-runbook.md).
+
+The eighth migration adds the encrypted server-side web authentication store used across web-process
+restarts and horizontally scaled instances.
 
 The conformance suite checks the actual table names, recorded migration versions, canonical
 repository reads, cross-tenant project/user separation, portal branding/update separation,
@@ -100,5 +104,6 @@ conflict-safe, transactional, and audited.
 
 OIDC mode requires `XYGO_API_REPOSITORY_MODE=postgres`; startup fails closed for file, SQLite, or
 memory repositories. Production additionally requires a supported provider name and an explicit
-HTTPS JWKS endpoint. Self-asserted staged headers are not considered in OIDC mode, and query-string
-authentication is limited to the tenant SSE transport that cannot set an authorization header.
+HTTPS JWKS endpoint. Self-asserted staged headers are not considered in OIDC mode. OIDC bearer tokens
+are accepted only from the Authorization header; the web broker proxies cookie-authenticated SSE and
+adds the Authorization header upstream so bearer tokens never appear in URLs.
