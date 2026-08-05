@@ -21,7 +21,8 @@ import {
 } from "../src/reliability/outbox.js";
 import {
   applyPostgresMigrations,
-  checkPostgresReadiness
+  checkPostgresReadiness,
+  POSTGRES_MIGRATIONS
 } from "../src/repositories/postgres-migrations.js";
 
 // Gated: only runs when a Postgres URL is provided (CI postgres job). Verifies the
@@ -167,7 +168,8 @@ test("postgres repository refuses an unmigrated schema without changing it", { s
 
   await assert.rejects(
     () => repository.checkReadiness(),
-    (error) => error.code === "postgres_schema_not_current" && error.migrationStatus.pending.length === 6
+    (error) => error.code === "postgres_schema_not_current" &&
+      error.migrationStatus.pending.length === POSTGRES_MIGRATIONS.length
   );
   const tables = await adminPool.query(
     "SELECT table_name FROM information_schema.tables WHERE table_schema = $1",
