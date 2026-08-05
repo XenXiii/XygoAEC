@@ -224,6 +224,48 @@ test("worker and OIDC clock numeric bounds reject unsafe extremes", () => {
   }
 });
 
+test("web login session, callback origin, cookie, and token tolerance settings fail closed", () => {
+  for (const [name, value] of [
+    ["XYGO_WEB_SESSION_SECRET", "weak"],
+    ["XYGO_WEB_SESSION_COOKIE_NAME", "xygo-session"],
+    ["XYGO_WEB_SESSION_COOKIE_SECURE", "false"],
+    ["XYGO_WEB_SESSION_COOKIE_HTTP_ONLY", "false"],
+    ["XYGO_WEB_SESSION_COOKIE_SAME_SITE", "none"],
+    ["XYGO_WEB_REQUIRE_REFRESH_TOKEN", "false"],
+    ["XYGO_WEB_ALLOWED_ORIGIN", "https://attacker.production.xygoaec.com"],
+    ["XYGO_WEB_SESSION_IDLE_SEC", "299"],
+    ["XYGO_WEB_SESSION_ABSOLUTE_SEC", "86401"],
+    ["XYGO_WEB_AUTH_TRANSACTION_TTL_SEC", "901"],
+    ["XYGO_WEB_TOKEN_REQUEST_TIMEOUT_MS", "999"],
+    ["XYGO_WEB_TOKEN_CLOCK_TOLERANCE_SEC", "121"],
+    ["XYGO_WEB_TOKEN_RENEW_BEFORE_SEC", "29"]
+  ]) {
+    assert.throws(
+      () => assertProductionWebEnvironment(validProductionEnvironment({ [name]: value })),
+      new RegExp(name)
+    );
+  }
+  assert.throws(
+    () => assertProductionWebEnvironment(validProductionEnvironment({
+      XYGO_WEB_SESSION_IDLE_SEC: "3600",
+      XYGO_WEB_SESSION_ABSOLUTE_SEC: "3600"
+    })),
+    /XYGO_WEB_SESSION_IDLE_SEC/
+  );
+  assert.throws(
+    () => assertProductionWebEnvironment(validProductionEnvironment({
+      XYGO_WEB_OIDC_AUTHORIZATION_ENDPOINT: "http://idp.production.xygoaec.com/authorize"
+    })),
+    /XYGO_WEB_OIDC_AUTHORIZATION_ENDPOINT must be an HTTPS URL/
+  );
+  assert.doesNotThrow(() => assertProductionWebEnvironment(validProductionEnvironment({
+    XYGO_WEB_TOKEN_CLOCK_TOLERANCE_SEC: "0"
+  })));
+  assert.doesNotThrow(() => assertProductionWebEnvironment(validProductionEnvironment({
+    XYGO_WEB_TOKEN_CLOCK_TOLERANCE_SEC: "120"
+  })));
+});
+
 test("worker runtime settings have bounded local defaults and map every production control", () => {
   assert.deepEqual(workerRuntimeOptionsFromEnvironment({}), {
     intervalMs: 1000,

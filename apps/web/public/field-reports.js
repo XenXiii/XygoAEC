@@ -1,3 +1,5 @@
+import { authenticatedFetch } from "/auth-client.js";
+
 // Field Reporting operator + client panel. Reads/writes the staged API and renders
 // with textContent/DOM (no innerHTML). Write actions send the staged tenant header.
 const controls = document.querySelector("#controls");
@@ -24,7 +26,7 @@ function apiBase() {
 }
 
 async function api(method, path, tenantId, bodyObj) {
-  const response = await fetch(`${apiBase()}${path}`, {
+  const response = await authenticatedFetch(`${apiBase()}${path}`, {
     method,
     headers: { "x-staged-tenant-id": tenantId, ...(bodyObj ? { "content-type": "application/json" } : {}) },
     body: bodyObj ? JSON.stringify(bodyObj) : undefined

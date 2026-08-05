@@ -1,10 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 
 import { createWebServer } from "../src/server.js";
 import { assertWebRuntimeConfig, loadWebRuntimeConfig, publicWebRuntimeConfig } from "../src/runtime-config.js";
 import {
   PRIVATE_PRODUCTION_ENV_VARS,
+  SERVER_ONLY_WEB_AUTH_ENV_VARS,
   SERVER_ONLY_STORAGE_ENV_VARS
 } from "../../../packages/production-config/src/index.js";
 
@@ -24,6 +26,19 @@ const productionEnv = {
   XYGO_WEB_OIDC_TOKEN_ENDPOINT: "https://idp.production.xygoaec.com/oauth/token",
   XYGO_WEB_OIDC_END_SESSION_ENDPOINT: "https://idp.production.xygoaec.com/logout",
   XYGO_WEB_OIDC_SCOPES: "openid profile email",
+  XYGO_WEB_SESSION_SECRET: "web-session-signing-secret-at-least-32-characters",
+  XYGO_WEB_SESSION_COOKIE_NAME: "__Host-xygo-session",
+  XYGO_WEB_SESSION_COOKIE_SECURE: "true",
+  XYGO_WEB_SESSION_COOKIE_HTTP_ONLY: "true",
+  XYGO_WEB_SESSION_COOKIE_SAME_SITE: "lax",
+  XYGO_WEB_SESSION_IDLE_SEC: "1800",
+  XYGO_WEB_SESSION_ABSOLUTE_SEC: "28800",
+  XYGO_WEB_AUTH_TRANSACTION_TTL_SEC: "300",
+  XYGO_WEB_TOKEN_REQUEST_TIMEOUT_MS: "10000",
+  XYGO_WEB_TOKEN_CLOCK_TOLERANCE_SEC: "30",
+  XYGO_WEB_TOKEN_RENEW_BEFORE_SEC: "120",
+  XYGO_WEB_REQUIRE_REFRESH_TOKEN: "true",
+  XYGO_WEB_ALLOWED_ORIGIN: "https://app.production.xygoaec.com",
   XYGO_WEB_MONITORING_ENDPOINT: "https://browser-monitoring.production.xygoaec.com/events"
 };
 
@@ -57,6 +72,8 @@ test("public runtime config fixes browser auth to code plus PKCE and memory toke
   assert.equal(publicConfig.auth.responseType, "code");
   assert.equal(publicConfig.auth.pkceMethod, "S256");
   assert.equal(publicConfig.auth.accessTokenStorage, "memory");
+  assert.equal(publicConfig.auth.sessionEndpoint, "/auth/session");
+  assert.equal(publicConfig.auth.renewEndpoint, "/auth/session/renew");
   assert.equal(publicConfig.auth.redirectUri, "https://app.production.xygoaec.com/auth/callback");
   assert.equal(publicConfig.environment, "production");
   assert.equal(publicConfig.release, "0123456789abcdef");
@@ -73,7 +90,25 @@ test("web server exposes only the non-secret managed IdP runtime manifest", () =
   const storageValues = Object.fromEntries(
     SERVER_ONLY_STORAGE_ENV_VARS.map((name, index) => [name, `storage-sentinel-${index}-must-not-be-public`])
   );
-  const server = createWebServer({ env: { ...productionEnv, ...secretValues, ...storageValues } });
+  const authValues = Object.fromEntries(
+    SERVER_ONLY_WEB_AUTH_ENV_VARS.map((name, index) => [name, `auth-sentinel-${index}-must-not-be-public`])
+  );
+  Object.assign(authValues, {
+    XYGO_WEB_SESSION_SECRET: "auth-session-secret-sentinel-at-least-32-characters",
+    XYGO_WEB_SESSION_COOKIE_NAME: "__Host-xygo-session",
+    XYGO_WEB_SESSION_COOKIE_SECURE: "true",
+    XYGO_WEB_SESSION_COOKIE_HTTP_ONLY: "true",
+    XYGO_WEB_SESSION_COOKIE_SAME_SITE: "lax",
+    XYGO_WEB_SESSION_IDLE_SEC: "1800",
+    XYGO_WEB_SESSION_ABSOLUTE_SEC: "28800",
+    XYGO_WEB_AUTH_TRANSACTION_TTL_SEC: "300",
+    XYGO_WEB_TOKEN_REQUEST_TIMEOUT_MS: "10000",
+    XYGO_WEB_TOKEN_CLOCK_TOLERANCE_SEC: "30",
+    XYGO_WEB_TOKEN_RENEW_BEFORE_SEC: "120",
+    XYGO_WEB_REQUIRE_REFRESH_TOKEN: "true",
+    XYGO_WEB_ALLOWED_ORIGIN: productionEnv.XYGO_WEB_APP_URL
+  });
+  const server = createWebServer({ env: { ...productionEnv, ...secretValues, ...storageValues, ...authValues } });
   let status;
   let headers;
   let responseBody;
@@ -98,4 +133,18 @@ test("web server exposes only the non-secret managed IdP runtime manifest", () =
   for (const value of Object.values(storageValues)) {
     assert.equal(serialized.includes(value), false);
   }
+  assert.equal(serialized.includes(authValues.XYGO_WEB_SESSION_SECRET), false);
+  for (const name of SERVER_ONLY_WEB_AUTH_ENV_VARS) assert.equal(name in body, false);
+});
+
+test("authenticated application surfaces use the shared bearer-session client", () => {
+  for (const name of ["app.js", "blueprint.js", "client-portal.js", "field-reports.js", "platform-blueprint.js"]) {
+    const source = fs.readFileSync(new URL(`../public/${name}`, import.meta.url), "utf8");
+    assert.match(source, /from "\/auth-client\.js"/);
+    assert.match(source, /authenticatedFetch/);
+  }
+  const authClient = fs.readFileSync(new URL("../public/auth-client.js", import.meta.url), "utf8");
+  assert.match(authClient, /authorization: `Bearer \$\{bearer\}`/);
+  assert.match(authClient, /response\.status === 401/);
+  assert.doesNotMatch(authClient, /localStorage|sessionStorage/);
 });

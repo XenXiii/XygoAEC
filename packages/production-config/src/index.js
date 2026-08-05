@@ -61,6 +61,7 @@ export const PUBLIC_WEB_RUNTIME_ENV_VARS = Object.freeze([
   "XYGO_WEB_OIDC_TOKEN_ENDPOINT",
   "XYGO_WEB_OIDC_END_SESSION_ENDPOINT",
   "XYGO_WEB_OIDC_SCOPES",
+  "XYGO_WEB_TOKEN_RENEW_BEFORE_SEC",
   "XYGO_WEB_MONITORING_ENDPOINT"
 ]);
 
@@ -72,7 +73,23 @@ export const PRIVATE_PRODUCTION_ENV_VARS = Object.freeze([
   "XYGO_STORAGE_ACCESS_KEY_ID",
   "XYGO_STORAGE_SECRET_ACCESS_KEY",
   "XYGO_MONITORING_AUTH_TOKEN",
-  "XYGO_OIDC_BINDING_ADMIN_TOKEN"
+  "XYGO_OIDC_BINDING_ADMIN_TOKEN",
+  "XYGO_WEB_SESSION_SECRET"
+]);
+
+export const SERVER_ONLY_WEB_AUTH_ENV_VARS = Object.freeze([
+  "XYGO_WEB_SESSION_SECRET",
+  "XYGO_WEB_SESSION_COOKIE_NAME",
+  "XYGO_WEB_SESSION_COOKIE_SECURE",
+  "XYGO_WEB_SESSION_COOKIE_HTTP_ONLY",
+  "XYGO_WEB_SESSION_COOKIE_SAME_SITE",
+  "XYGO_WEB_SESSION_IDLE_SEC",
+  "XYGO_WEB_SESSION_ABSOLUTE_SEC",
+  "XYGO_WEB_AUTH_TRANSACTION_TTL_SEC",
+  "XYGO_WEB_TOKEN_REQUEST_TIMEOUT_MS",
+  "XYGO_WEB_TOKEN_CLOCK_TOLERANCE_SEC",
+  "XYGO_WEB_REQUIRE_REFRESH_TOKEN",
+  "XYGO_WEB_ALLOWED_ORIGIN"
 ]);
 
 export const SERVER_ONLY_EMAIL_MONITORING_ENV_VARS = Object.freeze([
@@ -159,7 +176,8 @@ const API_REQUIRED_ENV_VARS = Object.freeze([
 const WEB_REQUIRED_ENV_VARS = Object.freeze([
   "NODE_ENV",
   "STAGED_MODE",
-  ...PUBLIC_WEB_RUNTIME_ENV_VARS
+  ...PUBLIC_WEB_RUNTIME_ENV_VARS,
+  ...SERVER_ONLY_WEB_AUTH_ENV_VARS
 ]);
 
 const WORKER_REQUIRED_ENV_VARS = Object.freeze([
@@ -517,6 +535,32 @@ export function assertProductionWebEnvironment(env = process.env) {
   requireHttpsUrl(env, "XYGO_WEB_OIDC_TOKEN_ENDPOINT", "web", { allowQuery: true });
   requireHttpsUrl(env, "XYGO_WEB_OIDC_END_SESSION_ENDPOINT", "web", { allowQuery: true });
   requireHttpsUrl(env, "XYGO_WEB_MONITORING_ENDPOINT", "web");
+  requireSecret(env, "XYGO_WEB_SESSION_SECRET", "web", 32);
+  requireExact(env, "XYGO_WEB_SESSION_COOKIE_SECURE", "true", "web");
+  requireExact(env, "XYGO_WEB_SESSION_COOKIE_HTTP_ONLY", "true", "web");
+  if (normalizedString(env.XYGO_WEB_SESSION_COOKIE_SAME_SITE)?.toLowerCase() !== "lax") {
+    fail("web", "XYGO_WEB_SESSION_COOKIE_SAME_SITE must be lax so the signed OAuth callback transaction cookie is returned.");
+  }
+  if (!normalizedString(env.XYGO_WEB_SESSION_COOKIE_NAME)?.startsWith("__Host-")) {
+    fail("web", "XYGO_WEB_SESSION_COOKIE_NAME must use the __Host- prefix.");
+  }
+  requireHttpsUrl(env, "XYGO_WEB_ALLOWED_ORIGIN", "web");
+  if (new URL(env.XYGO_WEB_ALLOWED_ORIGIN).origin !== new URL(env.XYGO_WEB_APP_URL).origin ||
+      new URL(env.XYGO_WEB_ALLOWED_ORIGIN).pathname !== "/") {
+    fail("web", "XYGO_WEB_ALLOWED_ORIGIN must exactly match the XYGO_WEB_APP_URL origin.");
+  }
+  for (const [name, bounds] of Object.entries({
+    XYGO_WEB_SESSION_IDLE_SEC: { minimum: 300, maximum: 86_400 },
+    XYGO_WEB_SESSION_ABSOLUTE_SEC: { minimum: 900, maximum: 86_400 },
+    XYGO_WEB_AUTH_TRANSACTION_TTL_SEC: { minimum: 60, maximum: 900 },
+    XYGO_WEB_TOKEN_REQUEST_TIMEOUT_MS: { minimum: 1_000, maximum: 30_000 },
+    XYGO_WEB_TOKEN_CLOCK_TOLERANCE_SEC: { minimum: 0, maximum: 120 },
+    XYGO_WEB_TOKEN_RENEW_BEFORE_SEC: { minimum: 30, maximum: 600 }
+  })) requireInteger(env, name, "web", bounds);
+  if (Number(env.XYGO_WEB_SESSION_IDLE_SEC) >= Number(env.XYGO_WEB_SESSION_ABSOLUTE_SEC)) {
+    fail("web", "XYGO_WEB_SESSION_IDLE_SEC must be less than XYGO_WEB_SESSION_ABSOLUTE_SEC.");
+  }
+  requireExact(env, "XYGO_WEB_REQUIRE_REFRESH_TOKEN", "true", "web");
 }
 
 export function assertProductionWorkerEnvironment(env = process.env) {

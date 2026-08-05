@@ -1,3 +1,5 @@
+import { authenticatedFetch } from "/auth-client.js";
+
 // Read-only client portal view. Fetches the composed portal from the staged API
 // and renders with textContent/DOM (no innerHTML).
 const controls = document.querySelector("#controls");
@@ -23,7 +25,7 @@ function apiBase() {
 }
 
 async function getJson(path, tenantId) {
-  const response = await fetch(`${apiBase()}${path}`, { headers: { "x-staged-tenant-id": tenantId } });
+  const response = await authenticatedFetch(`${apiBase()}${path}`, { headers: { "x-staged-tenant-id": tenantId } });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.message ?? `Request failed (${response.status})`);

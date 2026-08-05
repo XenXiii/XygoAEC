@@ -1,3 +1,5 @@
+import { authenticatedFetch } from "/auth-client.js";
+
 // Live panel for the generated Business Platform Blueprint. Reads from the staged
 // API and renders with textContent/DOM (no innerHTML) so record content can never
 // inject markup.
@@ -32,7 +34,7 @@ function el(tag, text, className) {
 }
 
 async function getJson(url, tenantId) {
-  const response = await fetch(url, { headers: { "x-staged-tenant-id": tenantId } });
+  const response = await authenticatedFetch(url, { headers: { "x-staged-tenant-id": tenantId } });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.message ?? `Request failed (${response.status})`);

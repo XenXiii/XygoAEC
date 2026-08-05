@@ -41,6 +41,11 @@ app/API URLs, the browser monitoring endpoint, and public OIDC/PKCE settings. It
 environment object. `XYGO_WEB_OIDC_CLIENT_SECRET` remains forbidden because the browser is a public
 PKCE client.
 
+The web login broker additionally requires a private session-signing secret, a `__Host-` Secure and
+HttpOnly SameSite=Lax cookie, exact same-origin renewal/logout checks, bounded transaction/session/token
+timers, and refresh-token support. Only signed opaque session ids enter cookies; refresh tokens stay
+server-side and access tokens are returned with `Cache-Control: no-store` for in-memory browser use.
+
 ## API: server-only values
 
 The API requires `XYGO_WEB_APP_URL`, `XYGO_WEB_API_BASE_URL`, `XYGO_AUTH_MODE=oidc`,

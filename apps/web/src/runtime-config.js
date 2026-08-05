@@ -31,6 +31,15 @@ function assertHttpsUrl(value, label, { allowQuery = false } = {}) {
   }
 }
 
+function integerSetting(value, fallback, minimum, maximum, label) {
+  const raw = value === undefined || value === "" ? String(fallback) : String(value);
+  const parsed = Number(raw);
+  if (!/^\d+$/.test(raw) || !Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) {
+    throw new Error(`${label} must be an integer between ${minimum} and ${maximum}.`);
+  }
+  return parsed;
+}
+
 export function loadWebRuntimeConfig(env = process.env) {
   const mode = normalizedString(env.XYGO_AUTH_MODE) ?? "staged";
   const productionMode = String(env.NODE_ENV ?? "").trim().toLowerCase() === "production" || !stagedModeEnabled(env.STAGED_MODE);
@@ -68,6 +77,18 @@ export function loadWebRuntimeConfig(env = process.env) {
       redirectUri: `${appUrl.replace(/\/$/, "")}/auth/callback`,
       postLogoutRedirectUri: `${appUrl.replace(/\/$/, "")}/`,
       accessTokenStorage: "memory"
+    };
+    config.session = {
+      secret: normalizedString(env.XYGO_WEB_SESSION_SECRET),
+      cookieName: normalizedString(env.XYGO_WEB_SESSION_COOKIE_NAME) ?? "__Host-xygo-session",
+      allowedOrigin: normalizedString(env.XYGO_WEB_ALLOWED_ORIGIN) ?? new URL(appUrl).origin,
+      idleTtlMs: integerSetting(env.XYGO_WEB_SESSION_IDLE_SEC, 1800, 300, 86_400, "XYGO_WEB_SESSION_IDLE_SEC") * 1000,
+      absoluteTtlMs: integerSetting(env.XYGO_WEB_SESSION_ABSOLUTE_SEC, 28_800, 900, 86_400, "XYGO_WEB_SESSION_ABSOLUTE_SEC") * 1000,
+      transactionTtlMs: integerSetting(env.XYGO_WEB_AUTH_TRANSACTION_TTL_SEC, 300, 60, 900, "XYGO_WEB_AUTH_TRANSACTION_TTL_SEC") * 1000,
+      tokenRequestTimeoutMs: integerSetting(env.XYGO_WEB_TOKEN_REQUEST_TIMEOUT_MS, 10_000, 1_000, 30_000, "XYGO_WEB_TOKEN_REQUEST_TIMEOUT_MS"),
+      tokenClockToleranceSec: integerSetting(env.XYGO_WEB_TOKEN_CLOCK_TOLERANCE_SEC, 30, 0, 120, "XYGO_WEB_TOKEN_CLOCK_TOLERANCE_SEC"),
+      renewBeforeSec: integerSetting(env.XYGO_WEB_TOKEN_RENEW_BEFORE_SEC, 120, 30, 600, "XYGO_WEB_TOKEN_RENEW_BEFORE_SEC"),
+      requireRefreshToken: String(env.XYGO_WEB_REQUIRE_REFRESH_TOKEN ?? "false").toLowerCase() === "true"
     };
   }
 
@@ -117,6 +138,17 @@ export function assertWebRuntimeConfig(config, env = process.env) {
     ]) {
       assertHttpsUrl(value, label, { allowQuery });
     }
+    if (!config.session.secret || config.session.secret.length < 32) throw new Error("XYGO_WEB_SESSION_SECRET must contain at least 32 characters.");
+    if (!config.session.cookieName.startsWith("__Host-") || config.session.cookieName.includes("=")) {
+      throw new Error("XYGO_WEB_SESSION_COOKIE_NAME must use the __Host- prefix.");
+    }
+    if (config.session.allowedOrigin !== new URL(config.appUrl).origin) {
+      throw new Error("XYGO_WEB_ALLOWED_ORIGIN must exactly match the application origin.");
+    }
+    if (config.session.idleTtlMs >= config.session.absoluteTtlMs) {
+      throw new Error("XYGO_WEB_SESSION_IDLE_SEC must be less than XYGO_WEB_SESSION_ABSOLUTE_SEC.");
+    }
+    if (!config.session.requireRefreshToken) throw new Error("XYGO_WEB_REQUIRE_REFRESH_TOKEN must be true in production mode.");
   }
   return config;
 }
@@ -144,7 +176,12 @@ export function publicWebRuntimeConfig(config) {
       pkceMethod: config.auth.pkceMethod,
       redirectUri: config.auth.redirectUri,
       postLogoutRedirectUri: config.auth.postLogoutRedirectUri,
-      accessTokenStorage: config.auth.accessTokenStorage
+      accessTokenStorage: config.auth.accessTokenStorage,
+      sessionEndpoint: "/auth/session",
+      renewEndpoint: "/auth/session/renew",
+      loginEndpoint: "/auth/login",
+      logoutEndpoint: "/auth/logout",
+      renewBeforeSec: config.session.renewBeforeSec
     }
   };
 }
