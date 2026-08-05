@@ -232,7 +232,7 @@ test("web login session, callback origin, cookie, and token tolerance settings f
     ["XYGO_WEB_SESSION_COOKIE_HTTP_ONLY", "false"],
     ["XYGO_WEB_SESSION_COOKIE_SAME_SITE", "none"],
     ["XYGO_WEB_REQUIRE_REFRESH_TOKEN", "false"],
-    ["XYGO_WEB_ALLOWED_ORIGIN", "https://attacker.production.xygoaec.com"],
+    ["XYGO_WEB_ALLOWED_ORIGIN", "https://attacker-production-xygoaec-com"],
     ["XYGO_WEB_SESSION_IDLE_SEC", "299"],
     ["XYGO_WEB_SESSION_ABSOLUTE_SEC", "86401"],
     ["XYGO_WEB_AUTH_TRANSACTION_TTL_SEC", "901"],
