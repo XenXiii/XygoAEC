@@ -15,6 +15,7 @@ const mimeTypes = {
   ".css": "text/css; charset=utf-8",
   ".js": "application/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".webmanifest": "application/manifest+json; charset=utf-8",
   ".txt": "text/plain; charset=utf-8",
   ".xml": "application/xml; charset=utf-8",
   ".png": "image/png",
@@ -130,8 +131,11 @@ export function createWebServer({ env = process.env, fetchImpl = fetch, sessionS
     }
 
     const ext = path.extname(filePath);
+    const noStore = url.pathname.startsWith("/auth/") || url.pathname === "/runtime-config.json";
+    const revalidate = ext === ".html" || ext === ".js" || ext === ".css" || ext === ".webmanifest";
     res.writeHead(200, {
-      "content-type": mimeTypes[ext] ?? "application/octet-stream"
+      "content-type": mimeTypes[ext] ?? "application/octet-stream",
+      "cache-control": noStore ? "no-store" : revalidate ? "no-cache" : "public, max-age=86400"
     });
     res.end(fs.readFileSync(filePath));
   });

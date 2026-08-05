@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex">
+    <meta name="theme-color" content="#05070c">
+    <meta name="color-scheme" content="dark">
+    <title>Xygo Workspace</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/release-shell.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to workspace</a>
+    <nav id="nav" aria-label="Workspace navigation"><div class="nav-inner"><a class="nav-logo" href="/workspace" aria-label="Xygo workspace">Xy<span>go</span></a><ul class="nav-links"><li><a href="/field-reports">Contractor reports</a></li><li><a href="/client-portal">Client portal</a></li><li><a href="/control-room">Operations</a></li><li><a href="/demo">Activation demo</a></li></ul><div class="nav-ctas"><button class="btn btn-ghost" id="install-app" type="button" hidden>Install</button><button class="btn btn-primary" id="logout" type="button">Sign out</button></div></div></nav>
+    <div class="banner" role="status" id="release-banner">STAGING RELEASE SURFACE · TENANT DATA LOADS ONLY AFTER AUTHORIZATION</div>
+    <main class="layout" id="main-content" tabindex="-1">
+      <header class="panel"><p class="eyebrow">Authenticated workspace</p><h1>Work ready for the field and the client.</h1><p class="subtitle">Use one release surface for contractor reporting, approved client information, workflow coordination, and staged activation checks.</p><div class="status-row" id="workspace-auth-status" aria-live="polite"><span class="tone-pill neutral">Checking session</span></div></header>
+      <section class="panel" aria-labelledby="work-heading"><div class="panel-header"><div><p class="eyebrow">Work surfaces</p><h2 id="work-heading">Choose a workspace</h2></div></div><div class="board-grid release-grid">
+        <a class="board release-card" href="/field-reports"><p class="eyebrow">Contractor</p><h3>Field reports</h3><p>Capture observations, draft reports, review them, and release approved updates.</p><span>Open contractor reports →</span></a>
+        <a class="board release-card" href="/client-portal"><p class="eyebrow">Client</p><h3>Client portal</h3><p>Review approved reports, project status, files, and client-visible updates.</p><span>Open client portal →</span></a>
+        <a class="board release-card" href="/blueprint"><p class="eyebrow">Coordination</p><h3>Blueprint workspace</h3><p>Inspect packages, sheets, findings, and governed issue conversion.</p><span>Open blueprinting →</span></a>
+        <a class="board release-card" href="/control-room"><p class="eyebrow">Operations</p><h3>Control room</h3><p>View staged workflow summaries and operational foundation health.</p><span>Open operations →</span></a>
+      </div></section>
+      <section class="panel" id="release-status" aria-labelledby="release-heading"><div class="panel-header"><div><p class="eyebrow">Release status</p><h2 id="release-heading">Runtime and installation</h2></div></div><div class="summary-grid"><article class="metric-card"><span class="metric-label">Environment</span><strong id="runtime-environment">Loading</strong></article><article class="metric-card"><span class="metric-label">Release</span><strong id="runtime-release">Loading</strong></article><article class="metric-card"><span class="metric-label">Connection</span><strong id="connection-state">Online</strong></article><article class="metric-card"><span class="metric-label">Offline policy</span><strong>Shell only</strong><span>Tenant and API data are never cached.</span></article></div></section>
+      <section class="panel"><div class="panel-header"><div><p class="eyebrow">Activation</p><h2>Staging and beta flows</h2></div></div><div class="board-grid release-grid"><a class="board release-card" href="/demo"><h3>Activation demo</h3><p>Walk through staged business scenarios without writing production data.</p></a><a class="board release-card" href="/platform-blueprint"><h3>Platform blueprint</h3><p>Review the generated staged module and delivery plan.</p></a></div></section>
+    </main>
+    <script type="module" src="/workspace.js"></script>
+    <script type="module" src="/pwa-client.js"></script>
+  </body>
+</html>

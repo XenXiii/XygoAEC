@@ -1,0 +1,24 @@
+{
+  "id": "/workspace",
+  "name": "Xygo Workspace",
+  "short_name": "Xygo",
+  "description": "Tenant-safe contractor reporting and client workspace.",
+  "start_url": "/workspace",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#05070c",
+  "theme_color": "#05070c",
+  "lang": "en-US",
+  "categories": ["business", "productivity"],
+  "icons": [
+    { "src": "/icons/xygo-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/xygo-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/xygo-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Contractor reports", "short_name": "Reports", "url": "/field-reports" },
+    { "name": "Client portal", "short_name": "Portal", "url": "/client-portal" },
+    { "name": "Workspace status", "short_name": "Status", "url": "/workspace#release-status" }
+  ]
+}

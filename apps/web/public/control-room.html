@@ -7,21 +7,23 @@
     <meta name="robots" content="noindex">
     <meta name="theme-color" content="#04050A">
     <meta name="color-scheme" content="dark">
+    <link rel="manifest" href="/manifest.webmanifest">
     <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/release-shell.css">
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to content</a>
 
     <nav id="nav" aria-label="Primary">
       <div class="nav-inner">
-        <a href="#home" class="nav-logo" aria-label="Xygo control room home">Xy<span>go</span></a>
+        <a href="/workspace" class="nav-logo" aria-label="Xygo workspace home">Xy<span>go</span></a>
         <ul class="nav-links">
           <li><a href="#summary-heading">Summary</a></li>
           <li><a href="#activity-heading">Workflow</a></li>
           <li><a href="/blueprint.html">Blueprinting</a></li>
           <li><a href="/platform.html">Platform Page</a></li>
           <li><a href="/platform-blueprint.html">Blueprint Plan</a></li>
-          <li><a href="/">Summary</a></li>
+          <li><a href="/workspace">Workspace</a></li>
         </ul>
         <div class="nav-ctas">
           <a class="btn btn-ghost" href="/">View Summary</a>
@@ -121,5 +123,6 @@
     </template>
 
     <script type="module" src="/app.js"></script>
+    <script type="module" src="/pwa-client.js"></script>
   </body>
 </html>
