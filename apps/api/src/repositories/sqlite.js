@@ -11,7 +11,10 @@ import { generatePlatformBlueprint } from "../../../../packages/platform-bluepri
 import { createFieldReport } from "../../../../packages/field-reporting/src/index.js";
 import {
   applyEmailWebhookStatus,
+  createEmailSuppressionFromWebhook,
   emailDeliveryIntentMatches,
+  mergeEmailSuppression,
+  normalizeEmailRecipient,
   summarizeEmailDeliveryHealth,
   summarizeWorkerHeartbeat
 } from "../../../../packages/email-delivery/src/index.js";
@@ -119,6 +122,14 @@ export function createSqliteRepository({ filePath }) {
     values: (row) => [row.id, row.tenantId, row.recipientUserId, row.recipientEmail, row.kind, row.resourceType,
       row.resourceId, row.idempotencyKey, row.status, row.attempts, row.provider, row.providerMessageId,
       row.providerStatusAt, row.lastError, JSON.stringify(row), row.createdAt, row.updatedAt, row.acceptedAt, row.deliveredAt]
+  });
+  seedTable(database, "email_suppressions", seedState.emailSuppressions, {
+    insert: (db) => db.prepare(
+      "INSERT INTO email_suppressions (id, tenant_id, normalized_recipient, reason, source, provider_event_id, payload, created_at, updated_at) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    ),
+    values: (row) => [row.id, row.tenantId, row.normalizedRecipient, row.reason, row.source,
+      row.providerEventId, JSON.stringify(row), row.createdAt, row.updatedAt]
   });
 
   return {
@@ -431,6 +442,16 @@ export function createSqliteRepository({ filePath }) {
     listEmailDeliveriesByTenant(tenantId) {
       return parseRows(database.prepare("SELECT payload FROM email_deliveries WHERE tenant_id = ? ORDER BY created_at, id").all(tenantId));
     },
+    getEmailSuppression(tenantId, recipientEmail) {
+      return parseRow(database.prepare(
+        "SELECT payload FROM email_suppressions WHERE tenant_id = ? AND normalized_recipient = ?"
+      ).get(tenantId, normalizeEmailRecipient(recipientEmail)));
+    },
+    listEmailSuppressionsByTenant(tenantId) {
+      return parseRows(database.prepare(
+        "SELECT payload FROM email_suppressions WHERE tenant_id = ? ORDER BY updated_at, id"
+      ).all(tenantId));
+    },
     saveEmailDelivery(delivery) {
       const result = database.prepare(
         "UPDATE email_deliveries SET status = ?, attempts = ?, provider = ?, provider_message_id = ?, provider_status_at = ?, " +
@@ -470,6 +491,18 @@ export function createSqliteRepository({ filePath }) {
         }
         const updated = applyEmailWebhookStatus(delivery, event);
         this.saveEmailDelivery(updated);
+        const incomingSuppression = createEmailSuppressionFromWebhook(updated, event, { webhookId });
+        if (incomingSuppression) {
+          const existing = this.getEmailSuppression(incomingSuppression.tenantId, incomingSuppression.normalizedRecipient);
+          const suppression = mergeEmailSuppression(existing, incomingSuppression);
+          database.prepare(
+            "INSERT INTO email_suppressions (id, tenant_id, normalized_recipient, reason, source, provider_event_id, payload, created_at, updated_at) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (tenant_id, normalized_recipient) DO UPDATE SET " +
+            "reason = excluded.reason, source = excluded.source, provider_event_id = excluded.provider_event_id, " +
+            "payload = excluded.payload, updated_at = excluded.updated_at"
+          ).run(suppression.id, suppression.tenantId, suppression.normalizedRecipient, suppression.reason,
+            suppression.source, suppression.providerEventId, JSON.stringify(suppression), suppression.createdAt, suppression.updatedAt);
+        }
         database.prepare(
           "INSERT INTO email_webhook_events (id, tenant_id, provider, provider_message_id, event_type, occurred_at, payload, processed_at) " +
           "VALUES (?, ?, 'resend', ?, ?, ?, ?, ?)"

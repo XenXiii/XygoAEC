@@ -26,6 +26,10 @@ export const POSTGRES_MIGRATIONS = [
   {
     version: "0006_email_monitoring",
     url: new URL("../../../../infrastructure/migrations/postgres/0006_email_monitoring.sql", import.meta.url)
+  },
+  {
+    version: "0007_email_suppressions",
+    url: new URL("../../../../infrastructure/migrations/postgres/0007_email_suppressions.sql", import.meta.url)
   }
 ];
 

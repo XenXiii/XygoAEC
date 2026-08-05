@@ -8,10 +8,13 @@ import { Webhook } from "svix";
 
 import {
   createEmailDelivery,
+  createEmailSuppressionFromWebhook,
   emailDeliveryIntentMatches,
   emailConfigurationFromEnvironment,
   createLocalEmailSink,
   createResendEmailProvider,
+  markEmailDeliveryAccepted,
+  markEmailDeliverySuppressed,
   summarizeEmailDeliveryHealth,
   summarizeWorkerHeartbeat,
   verifyResendWebhook
@@ -166,6 +169,30 @@ test("Resend webhook verification rejects tampering and stale replay", () => {
   assert.throws(() => verifyResendWebhook({ rawBody, headers, webhookSecret: secret, now: new Date(now.getTime() + 600_000) }), /replay window/);
 });
 
+test("suppression records normalize recipients and terminally skip matching future deliveries", () => {
+  const accepted = markEmailDeliveryAccepted(delivery(), {
+    provider: "resend",
+    providerMessageId: "message-suppression-a",
+    now: new Date("2026-08-04T00:01:00.000Z")
+  });
+  const suppression = createEmailSuppressionFromWebhook(accepted, {
+    type: "email.complained",
+    created_at: "2026-08-04T00:02:00.000Z",
+    data: { email_id: "message-suppression-a" }
+  }, { webhookId: "event-suppression-a" });
+  assert.equal(suppression.normalizedRecipient, "owner@client.invalid");
+  assert.equal(suppression.reason, "complaint");
+  assert.equal(suppression.providerEventId, "event-suppression-a");
+
+  const future = delivery({ id: "delivery-future", idempotencyKey: "delivery-future", recipientEmail: "OWNER@CLIENT.INVALID" });
+  const skipped = markEmailDeliverySuppressed(future, suppression, {
+    attempt: 1,
+    now: new Date("2026-08-04T00:03:00.000Z")
+  });
+  assert.equal(skipped.status, "suppressed");
+  assert.match(skipped.lastError, /complaint/);
+});
+
 test("email readiness reports stale backlog and terminal failures", () => {
   const queued = delivery();
   const failed = { ...delivery({ id: "delivery-b", idempotencyKey: "delivery-b" }), status: "bounced" };
@@ -177,6 +204,14 @@ test("email readiness reports stale backlog and terminal failures", () => {
   assert.equal(health.ready, false);
   assert.equal(health.stale, 1);
   assert.equal(health.failures, 1);
+});
+
+test("intentional suppression skips stay observable without failing readiness", () => {
+  const suppressed = { ...delivery(), status: "suppressed" };
+  const health = summarizeEmailDeliveryHealth([suppressed], { maxFailed: 0 });
+  assert.equal(health.ready, true);
+  assert.equal(health.counts.suppressed, 1);
+  assert.equal(health.failures, 0);
 });
 
 test("worker heartbeat readiness accepts another fresh worker while one instance is stopping", () => {

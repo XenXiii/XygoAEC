@@ -31,6 +31,7 @@ export function createSeedState() {
     fieldReports: clone(syntheticFieldReports),
     fileRecords: [],
     emailDeliveries: [],
+    emailSuppressions: [],
     emailWebhookEvents: [],
     serviceHeartbeats: [],
     auditEvents: []

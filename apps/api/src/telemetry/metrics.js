@@ -5,7 +5,7 @@ const DURATION_BUCKETS_MS = [5, 10, 25, 50, 100, 250, 500, 1000, 2500];
 const GAUGE_HELP = Object.freeze({
   xygo_dependency_ready: "Dependency readiness (1 ready, 0 not ready).",
   xygo_outbox_backlog: "Current pending and retryable outbox jobs.",
-  xygo_email_delivery_failures: "Current failed, bounced, complained, or suppressed email deliveries."
+  xygo_email_delivery_failures: "Current failed, bounced, or complained email deliveries; intentional suppression skips are excluded."
 });
 
 function labelKey(labels) {

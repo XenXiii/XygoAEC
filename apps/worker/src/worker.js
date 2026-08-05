@@ -8,7 +8,8 @@ import {
   createEmailProviderFromEnv,
   markEmailDeliveryAccepted,
   markEmailDeliveryFailed,
-  markEmailDeliverySending
+  markEmailDeliverySending,
+  markEmailDeliverySuppressed
 } from "../../../packages/email-delivery/src/index.js";
 import {
   assertProductionWorkerEnvironment,
@@ -47,6 +48,29 @@ export function createEmailDeliveryHandler({ repository, provider, auditSigningK
     // complete the outbox claim. Re-sending here would unnecessarily depend on a
     // provider's finite idempotency-retention window.
     if (["accepted", "delivered", "bounced", "complained", "suppressed"].includes(delivery.status)) return;
+
+    const suppression = await repository.getEmailSuppression?.(delivery.tenantId, delivery.recipientEmail);
+    if (suppression) {
+      const suppressed = markEmailDeliverySuppressed(delivery, suppression, { attempt: event.attempt });
+      await repository.finalizeEmailDelivery({
+        delivery: suppressed,
+        auditEventFactory: (previousHash) => createEmailDeliveryAuditEvent(suppressed, {
+          action: "email.delivery.suppressed",
+          actorId: "email-worker",
+          previousHash,
+          signingKey: auditSigningKey,
+          timestamp: suppressed.updatedAt,
+          suffix: `suppression-${suppression.id}`
+        })
+      });
+      logger.info("email.delivery_suppressed", {
+        deliveryId: suppressed.id,
+        tenantId: suppressed.tenantId,
+        kind: suppressed.kind,
+        reason: suppression.reason
+      });
+      return;
+    }
 
     const sending = markEmailDeliverySending(delivery, { attempt: event.attempt });
     await repository.saveEmailDelivery(sending);

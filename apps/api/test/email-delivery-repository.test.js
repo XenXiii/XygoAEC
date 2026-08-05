@@ -95,4 +95,28 @@ for (const kind of ["memory", "file", "sqlite"]) {
     });
     assert.equal((await repo.listAuditEventsByTenant(TENANT_A)).at(-1).previousHash, tenantEvent.eventHash);
   });
+
+  test(`[${kind}] suppression webhooks persist one tenant-scoped normalized recipient`, async () => {
+    const repo = repository(kind);
+    const record = delivery({ id: `delivery-suppression-${kind}`, idempotencyKey: `delivery-suppression-${kind}` });
+    await repo.createEmailDelivery(record);
+    const accepted = markEmailDeliveryAccepted(record, {
+      provider: "resend",
+      providerMessageId: `provider-suppression-${kind}`,
+      now: new Date("2026-08-04T00:00:01.000Z")
+    });
+    await repo.saveEmailDelivery(accepted);
+    const event = {
+      type: "email.complained",
+      created_at: "2026-08-04T00:00:02.000Z",
+      data: { email_id: `provider-suppression-${kind}` }
+    };
+    assert.equal((await repo.applyEmailWebhook({ webhookId: `webhook-suppression-${kind}`, event })).duplicate, false);
+    assert.equal((await repo.applyEmailWebhook({ webhookId: `webhook-suppression-${kind}`, event })).duplicate, true);
+    const suppression = await repo.getEmailSuppression(TENANT_A, "OWNER@CLIENT.INVALID");
+    assert.equal(suppression.reason, "complaint");
+    assert.equal(suppression.providerEventId, `webhook-suppression-${kind}`);
+    assert.equal((await repo.listEmailSuppressionsByTenant(TENANT_A)).length, 1);
+    assert.equal((await repo.listEmailSuppressionsByTenant(TENANT_B)).length, 0);
+  });
 }

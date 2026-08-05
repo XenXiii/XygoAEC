@@ -84,6 +84,7 @@ test("postgres schema contains every canonical provisioning table", { skip }, as
     "audit_events",
     "business_profiles",
     "email_deliveries",
+    "email_suppressions",
     "email_webhook_events",
     "file_records",
     "oidc_identities",
@@ -112,7 +113,8 @@ test("postgres schema contains every canonical provisioning table", { skip }, as
     "0003_oidc_authorization",
     "0004_tenant_file_storage",
     "0005_durable_outbox",
-    "0006_email_monitoring"
+    "0006_email_monitoring",
+    "0007_email_suppressions"
   ]);
 });
 
@@ -129,7 +131,8 @@ test("postgres readiness verifies connectivity and the complete migration chain"
     "0003_oidc_authorization",
     "0004_tenant_file_storage",
     "0005_durable_outbox",
-    "0006_email_monitoring"
+    "0006_email_monitoring",
+    "0007_email_suppressions"
   ]);
 });
 
@@ -464,6 +467,43 @@ test("postgres email delivery is transactional, tenant-scoped, worker-backed, an
     [`pg-webhook-${suffix}`]
   );
   assert.equal(persistedWebhook.rows[0].tenant_id, TENANT_A);
+  const complainedAt = new Date(Date.now() + 2000).toISOString();
+  const complaintEvent = {
+    type: "email.complained",
+    created_at: complainedAt,
+    data: { email_id: accepted.providerMessageId }
+  };
+  await repository.applyEmailWebhook({
+    webhookId: `pg-webhook-complaint-${suffix}`,
+    event: complaintEvent,
+    auditEventFactory: (updated, previousHash) => createEmailDeliveryAuditEvent(updated, {
+      action: "email.delivery.complained",
+      actorId: "resend-webhook",
+      previousHash,
+      timestamp: complainedAt,
+      suffix: `webhook-pg-complaint-${suffix}`
+    })
+  });
+  assert.equal((await repository.getEmailSuppression(TENANT_A, delivery.recipientEmail)).reason, "complaint");
+  assert.equal((await repository.listEmailSuppressionsByTenant(TENANT_B)).length, 0);
+
+  const suppressedDelivery = createEmailDelivery({
+    tenantId: TENANT_A,
+    recipientEmail: delivery.recipientEmail.toUpperCase(),
+    kind: "report_ready",
+    resourceType: "field_report",
+    resourceId: "field-report-commercial-b",
+    idempotencyKey: `${TENANT_A}:email:pg-suppressed:${suffix}`,
+    templateData: {
+      recipientName: "Client Owner",
+      reportTitle: "Suppressed Postgres report",
+      actionUrl: "https://app.xygoaec.com/client-portal.html"
+    }
+  }, { id: `email-pg-suppressed-${suffix}` });
+  await queueEmailDelivery({ repository, delivery: suppressedDelivery });
+  assert.equal((await worker.tick(Date.now() + 3000)).processed, 1);
+  assert.equal((await repository.getEmailDeliveryById(suppressedDelivery.id)).status, "suppressed");
+  assert.equal(sink.all().length, 1, "suppressed Postgres delivery must not call the provider");
   const failing = createPostgresRepository({
     connectionString: PG_URL,
     seedSyntheticData: true,

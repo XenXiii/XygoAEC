@@ -10,7 +10,10 @@ import { generatePlatformBlueprint } from "../../../../packages/platform-bluepri
 import { createFieldReport } from "../../../../packages/field-reporting/src/index.js";
 import {
   applyEmailWebhookStatus,
+  createEmailSuppressionFromWebhook,
   emailDeliveryIntentMatches,
+  mergeEmailSuppression,
+  normalizeEmailRecipient,
   summarizeEmailDeliveryHealth,
   summarizeWorkerHeartbeat
 } from "../../../../packages/email-delivery/src/index.js";
@@ -328,6 +331,14 @@ export function createFileRepository({ filePath }) {
     listEmailDeliveriesByTenant(tenantId) {
       return listByTenant(readState(filePath).emailDeliveries ?? [], tenantId).map(cloneState);
     },
+    getEmailSuppression(tenantId, recipientEmail) {
+      return (readState(filePath).emailSuppressions ?? []).find(
+        (item) => item.tenantId === tenantId && item.normalizedRecipient === normalizeEmailRecipient(recipientEmail)
+      ) ?? null;
+    },
+    listEmailSuppressionsByTenant(tenantId) {
+      return listByTenant(readState(filePath).emailSuppressions ?? [], tenantId);
+    },
     saveEmailDelivery(delivery) {
       const state = readState(filePath);
       state.emailDeliveries ??= [];
@@ -350,12 +361,23 @@ export function createFileRepository({ filePath }) {
     applyEmailWebhook({ webhookId, event, auditEvent = null, auditEventFactory = null }) {
       const state = readState(filePath);
       state.emailDeliveries ??= [];
+      state.emailSuppressions ??= [];
       state.emailWebhookEvents ??= [];
       if (state.emailWebhookEvents.some((item) => item.id === webhookId)) return { duplicate: true, delivery: null };
       const delivery = state.emailDeliveries.find((item) => item.providerMessageId === event?.data?.email_id);
       if (!delivery) return { duplicate: false, delivery: null };
       const updated = applyEmailWebhookStatus(delivery, event);
       state.emailDeliveries = replaceById(state.emailDeliveries, cloneState(updated));
+      const incomingSuppression = createEmailSuppressionFromWebhook(updated, event, { webhookId });
+      if (incomingSuppression) {
+        const existing = state.emailSuppressions.find((item) =>
+          item.tenantId === incomingSuppression.tenantId && item.normalizedRecipient === incomingSuppression.normalizedRecipient
+        );
+        const merged = mergeEmailSuppression(existing, incomingSuppression);
+        state.emailSuppressions = existing
+          ? state.emailSuppressions.map((item) => item.id === existing.id ? merged : item)
+          : [...state.emailSuppressions, merged];
+      }
       state.emailWebhookEvents.push({ id: webhookId, tenantId: updated.tenantId, event: cloneState(event) });
       const previous = state.auditEvents.filter((item) => item.tenantId === updated.tenantId).at(-1);
       const evidence = auditEventFactory ? auditEventFactory(updated, previous?.eventHash ?? null) : auditEvent;

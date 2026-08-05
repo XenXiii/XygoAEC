@@ -123,6 +123,22 @@ CREATE TABLE IF NOT EXISTS email_deliveries (
 CREATE INDEX IF NOT EXISTS idx_staged_email_deliveries_tenant_status
   ON email_deliveries(tenant_id, status, created_at);
 
+CREATE TABLE IF NOT EXISTS email_suppressions (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  normalized_recipient TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  source TEXT NOT NULL,
+  provider_event_id TEXT,
+  payload TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (tenant_id, normalized_recipient)
+);
+
+CREATE INDEX IF NOT EXISTS idx_staged_email_suppressions_tenant
+  ON email_suppressions(tenant_id, updated_at);
+
 CREATE TABLE IF NOT EXISTS email_webhook_events (
   id TEXT PRIMARY KEY,
   tenant_id TEXT NOT NULL,

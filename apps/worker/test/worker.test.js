@@ -155,6 +155,50 @@ test("email delivery retries safely and reuses the same provider idempotency key
   await worker.stop();
 });
 
+test("worker completes future suppressed deliveries without calling the provider or retrying", async () => {
+  const repository = createMemoryRepository();
+  const store = createOutboxStore();
+  const original = reportDelivery("worker-email-original-bounce");
+  repository.createEmailDelivery(original);
+  repository.saveEmailDelivery({
+    ...original,
+    status: "accepted",
+    provider: "resend",
+    providerMessageId: "provider-original-bounce",
+    providerStatusAt: new Date().toISOString(),
+    acceptedAt: new Date().toISOString()
+  });
+  repository.applyEmailWebhook({
+    webhookId: "provider-event-original-bounce",
+    event: {
+      type: "email.bounced",
+      created_at: new Date().toISOString(),
+      data: { email_id: "provider-original-bounce", bounce: { message: "hard bounce" } }
+    }
+  });
+
+  const future = reportDelivery("worker-email-after-bounce");
+  await queueEmailDelivery({ repository, outbox: store, delivery: future });
+  let providerCalls = 0;
+  const provider = {
+    provider: "test-provider",
+    async send() { providerCalls += 1; throw new Error("must not send"); },
+    async checkReadiness() { return { ready: true, provider: "test-provider" }; },
+    async close() {}
+  };
+  const worker = createWorker({ store, repository, emailProvider: provider });
+  const result = await worker.tick(Date.now());
+  assert.equal(result.processed, 1);
+  assert.equal(result.retried, 0);
+  assert.equal(providerCalls, 0);
+  assert.equal(repository.getEmailDeliveryById(future.id).status, "suppressed");
+  assert.equal(store.get(`${future.id}-outbox`).status, "processed");
+  assert.ok(repository.listAuditEventsByTenant(future.tenantId).some(
+    (event) => event.action === "email.delivery.suppressed" && event.resourceId === future.id
+  ));
+  await worker.stop();
+});
+
 test("worker readiness fails closed when the email provider is unhealthy", async () => {
   const store = createOutboxStore();
   const repository = createMemoryRepository();

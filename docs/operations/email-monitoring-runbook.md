@@ -8,7 +8,8 @@ not create a Resend account, verify a sending domain, install DNS records, confi
 backend, create alert rules, deploy any process, or send a live message.
 
 PostgreSQL migration `0006_email_monitoring` creates `email_deliveries`,
-`email_webhook_events`, and `service_heartbeats`. Email content and recipient addresses stay in the
+`email_webhook_events`, and `service_heartbeats`; `0007_email_suppressions` adds durable,
+tenant-scoped normalized-recipient suppression records. Email content and recipient addresses stay in the
 tenant-scoped delivery record; the outbox payload contains only the delivery id and kind.
 
 Implemented enqueue paths are:
@@ -29,6 +30,14 @@ The application inserts the delivery record, `email.delivery.queued` audit evide
 job, marks the record `sending`, calls the provider, and atomically persists `accepted` plus audit
 evidence. Provider callbacks can move it to `delivered`, `delayed`, `failed`, `bounced`,
 `complained`, or `suppressed` and append tenant audit evidence.
+
+Verified bounce, complaint, provider-suppression, and unsubscribe-style callbacks upsert one durable
+suppression per tenant and normalized recipient. The record retains its reason, source, provider event
+and message ids, originating delivery and resource context, and timestamps. Before every provider call,
+the worker checks this registry. Future deliveries to that tenant-recipient pair are finalized as
+`suppressed` with audit evidence and the outbox job completes without calling the provider or retrying.
+Repeated webhook ids are no-ops, and later suppression callbacks update the existing record rather than
+creating duplicates.
 
 Processing is at least once. The durable delivery idempotency key is reused for every retry and is
 sent as Resend's `Idempotency-Key`. A worker replay of an already accepted record does not call the
@@ -70,8 +79,8 @@ provider-side alert rules remain staging blockers.
 3. Configure `XYGO_EMAIL_FROM` and `XYGO_EMAIL_REPLY_TO` only after the provider reports the domain
    verified. Keep production and staging domains/keys separate.
 4. Register `POST https://<staging-api>/webhooks/email` and subscribe to sent, delivered,
-   delivery-delayed, failed, bounced, complained, and suppressed events. Store the webhook signing
-   secret privately.
+   delivery-delayed, failed, bounced, complained, suppressed, and unsubscribe-style events supported
+   by the provider. Store the webhook signing secret privately.
 5. The ingress must preserve the raw request body and the `svix-id`, `svix-timestamp`, and
    `svix-signature` headers. The application rejects invalid signatures and events outside its
    five-minute replay window; repeated webhook ids are idempotent.
@@ -85,7 +94,8 @@ provider-side alert rules remain staging blockers.
 
 1. Take the managed-Postgres pre-deploy backup and record its recovery point.
 2. Run `npm run migrate:postgres` as the separate migration job. Do not let API/worker boot apply
-   migrations. Run `npm run check:postgres` and confirm `0006_email_monitoring` is applied.
+   migrations. Run `npm run check:postgres` and confirm `0006_email_monitoring` and
+   `0007_email_suppressions` are applied.
 3. Boot one worker and require its startup readiness to pass before scaling it. Boot the API and
    require `/ready` HTTP 200 before routing traffic.
 4. Confirm `/ready` reports components named `database`, `storage`, `outbox`, `worker`, and
@@ -95,7 +105,10 @@ provider-side alert rules remain staging blockers.
    Confirm exactly one delivery/outbox job per recipient and idempotency key, one provider message,
    `accepted` then `delivered`, and matching tenant audit events. Automated tests use the local sink
    or a mocked HTTP response and never send real email.
-6. Repeat the enqueue/retry smoke once and prove the provider message id remains stable. Use a second
+6. Trigger an approved test bounce/complaint or signed fixture, then queue another message to the same
+   normalized recipient. Confirm the provider is not called, the new delivery is `suppressed`, the outbox
+   job completes, and audit/suppression records are inspectable. Repeat the webhook and confirm no duplicate.
+7. Repeat the enqueue/retry smoke once and prove the provider message id remains stable. Use a second
    tenant to prove its delivery list and audit chain cannot see the first tenant's records.
 
 ## Alert thresholds and readiness
@@ -109,6 +122,8 @@ staleness.
 
 `GET /health` is liveness only. `GET /ready` is the dependency gate. `GET /metrics` is the scrape
 surface. A green liveness response must never be used as permission to route traffic.
+Intentional worker-side suppression skips remain visible in delivery counts and audit evidence but do
+not increment the delivery-failure readiness metric; the originating bounce or complaint remains visible.
 
 ## Bounce, complaint, failure, and replay
 
@@ -117,9 +132,10 @@ surface. A green liveness response must never be used as permission to route tra
 - For a dead job, record the incident and root cause, correct the dependency or configuration, then
   use the tenant-scoped replay procedure in `durable-worker-outbox-runbook.md`. Never change its
   idempotency key.
-- For a bounce, complaint, or suppression, stop manual replay, verify the address and provider event,
-  and involve the account owner. Status/audit persistence is implemented; automatic recipient
-  suppression across future delivery records is not yet implemented.
+- For a bounce, complaint, unsubscribe, or provider suppression, stop manual replay, verify the address
+  and provider event, and involve the account owner. Future sends for the same tenant and normalized
+  recipient are durably suppressed. Removal or override is intentionally not automated: release requires
+  an approved operational review, address-owner confirmation, and a separately audited administrative path.
 - Unknown but valid webhook event types receive an accepted/ignored response. A tracked event whose
   provider id does not yet match a canonical record receives HTTP 503 so the provider retries; if it
   never reconciles, investigate it using provider logs as an incident.
@@ -133,7 +149,8 @@ jobs without external delivery. Keep the API only if the bounded backlog/age thr
 plan allow it; otherwise fail readiness and remove traffic. Rotate a compromised API or webhook key,
 update the secret manager, restart affected processes, and verify old webhook signatures fail.
 
-Application rollback must remain schema-compatible with migration `0006_email_monitoring`. Do not
+Application rollback must remain schema-compatible with migrations `0006_email_monitoring` and
+`0007_email_suppressions`. Do not
 drop delivery, webhook, heartbeat, outbox, or audit tables during an incident. Roll back the release,
 keep workers stopped, run database/readiness checks, and then resume one worker after confirming the
 old release understands queued event types. A destructive schema rollback requires a separately

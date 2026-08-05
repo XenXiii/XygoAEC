@@ -7,7 +7,10 @@ import { generatePlatformBlueprint } from "../../../../packages/platform-bluepri
 import { createFieldReport } from "../../../../packages/field-reporting/src/index.js";
 import {
   applyEmailWebhookStatus,
+  createEmailSuppressionFromWebhook,
   emailDeliveryIntentMatches,
+  mergeEmailSuppression,
+  normalizeEmailRecipient,
   summarizeEmailDeliveryHealth,
   summarizeWorkerHeartbeat
 } from "../../../../packages/email-delivery/src/index.js";
@@ -51,6 +54,9 @@ export function createMemoryRepository() {
   );
   const emailDeliveryStore = new Map(
     seedState.emailDeliveries.map((delivery) => [delivery.id, clone(delivery)])
+  );
+  const emailSuppressionStore = new Map(
+    seedState.emailSuppressions.map((item) => [`${item.tenantId}:${item.normalizedRecipient}`, clone(item)])
   );
   const emailWebhookEventStore = new Map(seedState.emailWebhookEvents.map((event) => [event.id, clone(event)]));
   const serviceHeartbeatStore = new Map(
@@ -279,6 +285,12 @@ export function createMemoryRepository() {
     listEmailDeliveriesByTenant(tenantId) {
       return Array.from(emailDeliveryStore.values()).filter((delivery) => delivery.tenantId === tenantId).map(clone);
     },
+    getEmailSuppression(tenantId, recipientEmail) {
+      return clone(emailSuppressionStore.get(`${tenantId}:${normalizeEmailRecipient(recipientEmail)}`) ?? null);
+    },
+    listEmailSuppressionsByTenant(tenantId) {
+      return Array.from(emailSuppressionStore.values()).filter((item) => item.tenantId === tenantId).map(clone);
+    },
     saveEmailDelivery(delivery) {
       if (!emailDeliveryStore.has(delivery.id)) throw new Error("Email delivery not found.");
       emailDeliveryStore.set(delivery.id, clone(delivery));
@@ -300,6 +312,11 @@ export function createMemoryRepository() {
       if (!delivery) return { duplicate: false, delivery: null };
       const updated = applyEmailWebhookStatus(delivery, event);
       emailDeliveryStore.set(updated.id, clone(updated));
+      const incomingSuppression = createEmailSuppressionFromWebhook(updated, event, { webhookId });
+      if (incomingSuppression) {
+        const key = `${incomingSuppression.tenantId}:${incomingSuppression.normalizedRecipient}`;
+        emailSuppressionStore.set(key, mergeEmailSuppression(emailSuppressionStore.get(key), incomingSuppression));
+      }
       emailWebhookEventStore.set(webhookId, { id: webhookId, tenantId: updated.tenantId, event: clone(event) });
       const previous = auditEventStore.filter((item) => item.tenantId === updated.tenantId).at(-1);
       const evidence = auditEventFactory ? auditEventFactory(updated, previous?.eventHash ?? null) : auditEvent;

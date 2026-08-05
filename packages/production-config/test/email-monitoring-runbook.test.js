@@ -10,6 +10,7 @@ const runbook = fs.readFileSync(
 test("email monitoring runbook covers provider, DNS, webhooks, readiness, and incidents", () => {
   for (const phrase of [
     "0006_email_monitoring",
+    "0007_email_suppressions",
     "Idempotency-Key",
     "SPF",
     "DKIM",
@@ -19,6 +20,7 @@ test("email monitoring runbook covers provider, DNS, webhooks, readiness, and in
     "GET /metrics",
     "bounce",
     "complaint",
+    "unsubscribe",
     "incident response",
     "rollback"
   ]) {
@@ -30,5 +32,5 @@ test("email monitoring runbook does not claim live services are configured", () 
   assert.match(runbook, /does\s+not create a Resend account/);
   assert.match(runbook, /does not export telemetry/);
   assert.match(runbook, /never send real email/);
-  assert.match(runbook, /automatic recipient\s+suppression.*is not yet implemented/s);
+  assert.match(runbook, /Future deliveries.*suppressed.*without calling the provider/s);
 });

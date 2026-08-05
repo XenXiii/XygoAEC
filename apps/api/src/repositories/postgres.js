@@ -10,9 +10,12 @@ import { generatePlatformBlueprint } from "../../../../packages/platform-bluepri
 import { createFieldReport } from "../../../../packages/field-reporting/src/index.js";
 import {
   applyEmailWebhookStatus,
+  createEmailSuppressionFromWebhook,
   createEmailDelivery,
   createEmailDeliveryOutboxEvent,
   emailDeliveryIntentMatches,
+  mergeEmailSuppression,
+  normalizeEmailRecipient,
   summarizeWorkerHeartbeat
 } from "../../../../packages/email-delivery/src/index.js";
 import { createAuditEvent } from "../../../../packages/audit/src/foundation.js";
@@ -789,6 +792,18 @@ export function createPostgresRepository({
         [tenantId]
       ));
     },
+    async getEmailSuppression(tenantId, recipientEmail) {
+      return one(await query(
+        "SELECT payload FROM email_suppressions WHERE tenant_id = $1 AND normalized_recipient = $2",
+        [tenantId, normalizeEmailRecipient(recipientEmail)]
+      ));
+    },
+    async listEmailSuppressionsByTenant(tenantId) {
+      return payloads(await query(
+        "SELECT payload FROM email_suppressions WHERE tenant_id = $1 ORDER BY updated_at, id",
+        [tenantId]
+      ));
+    },
     async saveEmailDelivery(delivery) {
       const transactionClient = transactionContext.getStore();
       return updateEmailDelivery(transactionClient ?? await pool(), delivery);
@@ -829,6 +844,23 @@ export function createPostgresRepository({
         const delivery = result.rows[0]?.payload;
         if (!delivery) return { duplicate: false, delivery: null };
         const updated = applyEmailWebhookStatus(delivery, event);
+        const incomingSuppression = createEmailSuppressionFromWebhook(updated, event, { webhookId });
+        if (incomingSuppression) {
+          const existingResult = await client.query(
+            "SELECT payload FROM email_suppressions WHERE tenant_id = $1 AND normalized_recipient = $2 FOR UPDATE",
+            [incomingSuppression.tenantId, incomingSuppression.normalizedRecipient]
+          );
+          const suppression = mergeEmailSuppression(existingResult.rows[0]?.payload, incomingSuppression);
+          await client.query(
+            "INSERT INTO email_suppressions " +
+              "(id, tenant_id, normalized_recipient, reason, source, provider_event_id, payload, created_at, updated_at) " +
+              "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (tenant_id, normalized_recipient) DO UPDATE SET " +
+              "reason = EXCLUDED.reason, source = EXCLUDED.source, provider_event_id = EXCLUDED.provider_event_id, " +
+              "payload = EXCLUDED.payload, updated_at = EXCLUDED.updated_at",
+            [suppression.id, suppression.tenantId, suppression.normalizedRecipient, suppression.reason,
+              suppression.source, suppression.providerEventId, suppression, suppression.createdAt, suppression.updatedAt]
+          );
+        }
         const previous = await client.query(
           "SELECT payload FROM audit_events WHERE tenant_id = $1 ORDER BY seq DESC LIMIT 1",
           [delivery.tenantId]
@@ -874,7 +906,7 @@ export function createPostgresRepository({
         counts[row.status] = row.count;
         stale += row.stale;
       }
-      const failures = counts.failed + counts.bounced + counts.complained + counts.suppressed;
+      const failures = counts.failed + counts.bounced + counts.complained;
       const health = {
         ready: stale === 0 && failures <= maxFailed,
         counts,

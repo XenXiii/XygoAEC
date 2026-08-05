@@ -44,6 +44,7 @@ in `schema_migrations`:
 4. `0004_tenant_file_storage.sql`
 5. `0005_durable_outbox.sql`
 6. `0006_email_monitoring.sql`
+7. `0007_email_suppressions.sql`
 
 The second migration adds canonical users, paid-client role assignments, business profiles, portal
 configuration, portal seed data, and provisioning events. Provisioning also uses the existing

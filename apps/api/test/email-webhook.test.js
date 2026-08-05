@@ -59,6 +59,39 @@ test("verified provider webhooks update delivery status once and append tenant a
   ).length, 1);
 });
 
+test("bounce webhooks durably and idempotently suppress the normalized tenant recipient", async () => {
+  const repository = createMemoryRepository();
+  const queued = createEmailDelivery({
+    tenantId: "tenant-commercial-sim",
+    recipientEmail: "Owner@Client.Invalid",
+    kind: "activation",
+    templateData: {
+      recipientName: "Owner",
+      workspaceName: "Atlas",
+      actionUrl: "https://app.xygoaec.com/client-portal.html"
+    }
+  }, { id: "delivery-webhook-bounce" });
+  repository.createEmailDelivery(queued);
+  repository.saveEmailDelivery(markEmailDeliveryAccepted(queued, {
+    provider: "resend",
+    providerMessageId: "provider-message-bounce"
+  }));
+  const now = new Date();
+  const request = signedEvent({
+    type: "email.bounced",
+    created_at: now.toISOString(),
+    data: { email_id: "provider-message-bounce", bounce: { message: "mailbox unavailable" } }
+  }, { id: "msg-webhook-bounce", now });
+  const first = await handleEmailWebhook({ ...request, repository, webhookSecret: SECRET });
+  const repeated = await handleEmailWebhook({ ...request, repository, webhookSecret: SECRET });
+  const suppression = repository.getEmailSuppression("tenant-commercial-sim", "OWNER@CLIENT.INVALID");
+  assert.equal(first.body.status, "bounced");
+  assert.equal(repeated.body.duplicate, true);
+  assert.equal(suppression.reason, "bounce");
+  assert.equal(suppression.providerEventId, "msg-webhook-bounce");
+  assert.equal(repository.listEmailSuppressionsByTenant("tenant-commercial-sim").length, 1);
+});
+
 test("email webhooks reject invalid signatures and do not update status", async () => {
   const repository = createMemoryRepository();
   const response = await handleEmailWebhook({

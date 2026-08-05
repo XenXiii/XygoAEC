@@ -33,7 +33,14 @@ const WEBHOOK_STATUS = Object.freeze({
   "email.failed": "failed",
   "email.bounced": "bounced",
   "email.complained": "complained",
-  "email.suppressed": "suppressed"
+  "email.suppressed": "suppressed",
+  "email.unsubscribed": "suppressed"
+});
+const SUPPRESSION_REASONS = Object.freeze({
+  "email.bounced": "bounce",
+  "email.complained": "complaint",
+  "email.suppressed": "provider_suppression",
+  "email.unsubscribed": "unsubscribe"
 });
 
 function requiredString(value, label, maximum = 2000) {
@@ -55,6 +62,52 @@ function emailAddress(value, label = "Email address") {
   const normalized = requiredString(value, label, 320).toLowerCase();
   if (!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(normalized)) throw new Error(`${label} is invalid.`);
   return normalized;
+}
+
+export function normalizeEmailRecipient(value) {
+  return emailAddress(value, "Suppression recipient");
+}
+
+export function createEmailSuppressionFromWebhook(delivery, event, {
+  webhookId,
+  provider = "resend"
+} = {}) {
+  assertEmailDelivery(delivery);
+  const reason = SUPPRESSION_REASONS[event?.type];
+  if (!reason) return null;
+  if (event?.data?.email_id !== delivery.providerMessageId) {
+    throw new Error("Email suppression webhook provider message does not match delivery.");
+  }
+  const occurredAt = new Date(requiredString(event.created_at, "Webhook created_at", 100));
+  if (Number.isNaN(occurredAt.getTime())) throw new Error("Webhook created_at is invalid.");
+  const normalizedRecipient = normalizeEmailRecipient(delivery.recipientEmail);
+  const timestamp = occurredAt.toISOString();
+  return {
+    id: `email-suppression-${crypto.createHash("sha256").update(`${delivery.tenantId}\u0000${normalizedRecipient}`).digest("hex")}`,
+    tenantId: delivery.tenantId,
+    normalizedRecipient,
+    recipientUserId: delivery.recipientUserId ?? null,
+    reason,
+    source: "provider_webhook",
+    provider: requiredString(provider, "Email suppression provider", 100),
+    providerEventId: requiredString(webhookId, "Email suppression provider event id", 200),
+    providerMessageId: delivery.providerMessageId,
+    deliveryId: delivery.id,
+    resourceType: delivery.resourceType ?? null,
+    resourceId: delivery.resourceId ?? null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    staged: true
+  };
+}
+
+export function mergeEmailSuppression(existing, incoming) {
+  if (!existing) return structuredClone(incoming);
+  if (existing.tenantId !== incoming.tenantId || existing.normalizedRecipient !== incoming.normalizedRecipient) {
+    throw new Error("Email suppression identity cannot be changed.");
+  }
+  if (new Date(incoming.updatedAt) < new Date(existing.updatedAt)) return structuredClone(existing);
+  return { ...existing, ...incoming, id: existing.id, createdAt: existing.createdAt };
 }
 
 function httpUrl(value, label) {
@@ -291,6 +344,24 @@ export function markEmailDeliveryFailed(delivery, error, { attempt, now = new Da
   };
 }
 
+export function markEmailDeliverySuppressed(delivery, suppression, { attempt, now = new Date() } = {}) {
+  assertEmailDelivery(delivery);
+  if (TERMINAL_STATUSES.has(delivery.status)) return delivery;
+  if (suppression?.tenantId !== delivery.tenantId ||
+      normalizeEmailRecipient(suppression?.normalizedRecipient) !== delivery.recipientEmail) {
+    throw new Error("Email suppression does not match delivery recipient and tenant.");
+  }
+  const timestamp = now.toISOString();
+  return {
+    ...delivery,
+    status: "suppressed",
+    attempts: Math.max(delivery.attempts ?? 0, Number(attempt) || 1),
+    providerStatusAt: timestamp,
+    lastError: `recipient suppressed: ${requiredString(suppression.reason, "Email suppression reason", 100)}`,
+    updatedAt: timestamp
+  };
+}
+
 export function applyEmailWebhookStatus(delivery, event) {
   assertEmailDelivery(delivery);
   const status = WEBHOOK_STATUS[event?.type];
@@ -487,7 +558,8 @@ export function summarizeEmailDeliveryHealth(deliveries, {
       if (!Number.isFinite(updatedAt) || updatedAt <= now - staleAfterMs) stale += 1;
     }
   }
-  const failures = counts.failed + counts.bounced + counts.complained + counts.suppressed;
+  // A worker-side suppression is an intentional compliance outcome, not a failed dependency.
+  const failures = counts.failed + counts.bounced + counts.complained;
   const health = {
     ready: stale === 0 && failures <= maxFailed,
     counts,
