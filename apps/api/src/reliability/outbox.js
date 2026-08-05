@@ -122,20 +122,34 @@ function assertJobStatus(status) {
   if (!JOB_STATUSES.has(status)) throw new Error(`Unknown outbox job status: ${status}`);
 }
 
-function healthFromRecords(records, { now = Date.now(), staleAfterMs = 60_000, maxDeadJobs = 0 } = {}) {
+function healthFromRecords(records, {
+  now = Date.now(),
+  staleAfterMs = 60_000,
+  maxDeadJobs = 0,
+  maxBacklog = Number.MAX_SAFE_INTEGER,
+  oldestPendingMs = Number.MAX_SAFE_INTEGER
+} = {}) {
   const staleBefore = epoch(now) - staleAfterMs;
   const counts = Object.fromEntries([...JOB_STATUSES].map((status) => [status, 0]));
   let stale = 0;
+  let oldestCreatedAt = null;
   for (const record of records) {
     assertJobStatus(record.status);
     counts[record.status] += 1;
     if (record.status === "processing" && record.lockedAt && epoch(record.lockedAt) <= staleBefore) stale += 1;
+    if (["pending", "failed", "processing"].includes(record.status) && record.createdAt) {
+      const createdAt = epoch(record.createdAt);
+      if (Number.isFinite(createdAt)) oldestCreatedAt = oldestCreatedAt === null ? createdAt : Math.min(oldestCreatedAt, createdAt);
+    }
   }
+  const backlog = counts.pending + counts.failed + counts.processing;
+  const oldestPendingAgeMs = oldestCreatedAt === null ? 0 : Math.max(0, epoch(now) - oldestCreatedAt);
   return {
-    ready: stale === 0 && counts.dead <= maxDeadJobs,
+    ready: stale === 0 && counts.dead <= maxDeadJobs && backlog <= maxBacklog && oldestPendingAgeMs <= oldestPendingMs,
     counts,
     stale,
-    backlog: counts.pending + counts.failed + counts.processing
+    backlog,
+    oldestPendingAgeMs
   };
 }
 
@@ -386,9 +400,10 @@ export function createSqliteOutboxStore({ filePath = DEFAULT_SQLITE_PATH } = {})
     },
     async checkReadiness(options = {}) {
       database.prepare("SELECT 1").get();
-      const records = database.prepare("SELECT status, locked_at FROM outbox_jobs").all().map((row) => ({
+      const records = database.prepare("SELECT status, locked_at, created_at FROM outbox_jobs").all().map((row) => ({
         status: row.status,
-        lockedAt: row.locked_at
+        lockedAt: row.locked_at,
+        createdAt: row.created_at
       }));
       const health = { ...healthFromRecords(records, options), backend: "sqlite" };
       if (options.requireHealthy && !health.ready) throw healthError(health);
@@ -547,23 +562,37 @@ export function createPostgresOutboxStore({ connectionString, poolOptions = {} }
       const staleBefore = new Date(epoch(options.now ?? Date.now()) - (options.staleAfterMs ?? 60_000));
       const result = await query(
         "SELECT status, count(*)::int AS count, " +
-        "count(*) FILTER (WHERE status = 'processing' AND locked_at <= $1)::int AS stale " +
+        "count(*) FILTER (WHERE status = 'processing' AND locked_at <= $1)::int AS stale, " +
+        "min(created_at) FILTER (WHERE status IN ('pending','failed','processing')) AS oldest_created_at " +
         "FROM outbox_jobs GROUP BY status",
         [staleBefore]
       );
       const counts = Object.fromEntries([...JOB_STATUSES].map((status) => [status, 0]));
       let stale = 0;
+      let oldestCreatedAt = null;
       for (const row of result.rows) {
         assertJobStatus(row.status);
         counts[row.status] = row.count;
         stale += row.stale;
+        if (row.oldest_created_at) {
+          const createdAt = new Date(row.oldest_created_at).getTime();
+          oldestCreatedAt = oldestCreatedAt === null ? createdAt : Math.min(oldestCreatedAt, createdAt);
+        }
       }
+      const backlog = counts.pending + counts.failed + counts.processing;
+      const oldestPendingAgeMs = oldestCreatedAt === null
+        ? 0
+        : Math.max(0, epoch(options.now ?? Date.now()) - oldestCreatedAt);
       const health = {
-        ready: stale === 0 && counts.dead <= (options.maxDeadJobs ?? 0),
+        ready: stale === 0 &&
+          counts.dead <= (options.maxDeadJobs ?? 0) &&
+          backlog <= (options.maxBacklog ?? Number.MAX_SAFE_INTEGER) &&
+          oldestPendingAgeMs <= (options.oldestPendingMs ?? Number.MAX_SAFE_INTEGER),
         backend: "postgres",
         counts,
         stale,
-        backlog: counts.pending + counts.failed + counts.processing
+        backlog,
+        oldestPendingAgeMs
       };
       if (options.requireHealthy && !health.ready) throw healthError(health);
       return health;
@@ -634,7 +663,7 @@ export async function processOutboxOnce({
         workerId,
         error,
         now,
-        maxAttempts,
+        maxAttempts: error?.retryable === false ? job.attempts : maxAttempts,
         baseBackoffMs,
         maxBackoffMs
       });

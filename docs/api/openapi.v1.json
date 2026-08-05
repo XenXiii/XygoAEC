@@ -122,6 +122,37 @@
         }
       }
     },
+    "/ready": {
+      "get": {
+        "summary": "Report API, database, storage, outbox, worker, and email-delivery readiness",
+        "security": [],
+        "responses": {
+          "200": { "description": "all required dependencies are ready" },
+          "503": { "description": "one or more required dependencies are not ready" }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "summary": "Return Prometheus-compatible process and dependency metrics",
+        "security": [],
+        "responses": {
+          "200": { "description": "metrics text" }
+        }
+      }
+    },
+    "/webhooks/email": {
+      "post": {
+        "summary": "Accept a signature-verified Resend delivery-status webhook",
+        "security": [],
+        "responses": {
+          "200": { "description": "matching delivery status applied or duplicate acknowledged" },
+          "202": { "description": "verified event type is not tracked" },
+          "401": { "description": "signature or replay-window verification failed" },
+          "503": { "description": "verified provider message is not yet present in canonical delivery records; retry required" }
+        }
+      }
+    },
     "/v1/tenants/{tenantId}/projects": {
       "get": {
         "summary": "List staged projects for a tenant",
@@ -395,6 +426,21 @@
         "responses": {
           "200": { "description": "per-project client portal views" },
           "403": { "description": "tenant mismatch or unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } }
+        }
+      }
+    },
+    "/v1/tenants/{tenantId}/email-deliveries": {
+      "get": {
+        "summary": "List tenant-scoped email delivery status records",
+        "parameters": [
+          { "name": "tenantId", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "$ref": "#/components/parameters/PaginationLimit" },
+          { "$ref": "#/components/parameters/PaginationOffset" },
+          { "$ref": "#/components/parameters/StatusFilter" }
+        ],
+        "responses": {
+          "200": { "description": "paginated tenant-scoped email delivery records" },
+          "403": { "description": "tenant mismatch or unauthorized role" }
         }
       }
     },

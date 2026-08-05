@@ -30,6 +30,10 @@ export function createSeedState() {
     platformBlueprints: clone(syntheticPlatformBlueprints),
     fieldReports: clone(syntheticFieldReports),
     fileRecords: [],
+    emailDeliveries: [],
+    emailSuppressions: [],
+    emailWebhookEvents: [],
+    serviceHeartbeats: [],
     auditEvents: []
   };
 }

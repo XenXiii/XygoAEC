@@ -23,7 +23,7 @@ test("durable worker runbook documents migrations, claiming, retry, replay, and 
 });
 
 test("durable worker runbook does not claim providers or deployment were configured", () => {
-  assert.match(runbook, /does not provision PostgreSQL, deploy a worker, install live credentials, send email/);
-  assert.match(runbook, /Monitoring-provider alert wiring is a later slice/);
+  assert.match(runbook, /does not provision PostgreSQL, deploy a worker, install live credentials, send live email/);
+  assert.match(runbook, /External monitoring-provider alert wiring remains a deployment/);
   assert.match(runbook, /do not drop `outbox_jobs` during an incident/);
 });

@@ -6,12 +6,14 @@ import {
   PRIVATE_PRODUCTION_ENV_VARS,
   PUBLIC_WEB_RUNTIME_ENV_VARS,
   REQUIRED_PRODUCTION_ENV_VARS,
+  SERVER_ONLY_EMAIL_MONITORING_ENV_VARS,
   SERVER_ONLY_OUTBOX_ENV_VARS,
   SERVER_ONLY_STORAGE_ENV_VARS,
   assertProductionApiEnvironment,
   assertProductionWebEnvironment,
   assertProductionWorkerEnvironment,
   postgresPoolOptionsFromEnvironment,
+  monitoringRuntimeOptionsFromEnvironment,
   workerRuntimeOptionsFromEnvironment
 } from "../src/index.js";
 import { validProductionEnvironment } from "./fixtures.js";
@@ -41,6 +43,17 @@ test("complete production manifests pass each process gate", () => {
   for (const validate of Object.values(validators)) {
     assert.doesNotThrow(() => validate(env));
   }
+});
+
+test("deployable staging uses the same fail-closed server configuration gate", () => {
+  const env = validProductionEnvironment({ XYGO_DEPLOY_ENVIRONMENT: "staging" });
+  for (const validate of Object.values(validators)) {
+    assert.doesNotThrow(() => validate(env));
+  }
+  assert.throws(
+    () => assertProductionApiEnvironment(validProductionEnvironment({ XYGO_DEPLOY_ENVIRONMENT: "development" })),
+    /XYGO_DEPLOY_ENVIRONMENT must be staging or production/
+  );
 });
 
 test("every process gate fails when any of its required values is absent", () => {
@@ -133,9 +146,9 @@ test("reserved example hosts and generic placeholder values fail closed", () => 
   );
   assert.throws(
     () => assertProductionWorkerEnvironment(validProductionEnvironment({
-      XYGO_SMTP_HOST: "smtp.example.com"
+      XYGO_EMAIL_FROM: "notifications@example.com"
     })),
-    /XYGO_SMTP_HOST must not use a reserved example, test, local, invalid, or loopback hostname/
+    /XYGO_EMAIL_FROM must not use a reserved example, test, local, invalid, or loopback hostname/
   );
   assert.throws(
     () => assertProductionWebEnvironment(validProductionEnvironment({ XYGO_RELEASE: "example-release" })),
@@ -234,6 +247,69 @@ test("worker runtime settings have bounded local defaults and map every producti
   });
 });
 
+test("email provider and monitoring settings fail closed in production", () => {
+  for (const [name, value] of [
+    ["XYGO_EMAIL_TRANSPORT", "sink"],
+    ["XYGO_EMAIL_RESEND_API_URL", "https://mail.production.xygoaec.com"],
+    ["XYGO_EMAIL_RESEND_API_KEY", "change-me"],
+    ["XYGO_EMAIL_WEBHOOK_SECRET", "short"],
+    ["XYGO_EMAIL_REPLY_TO", "not-an-email"],
+    ["XYGO_MONITORING_ENABLED", "false"]
+  ]) {
+    assert.throws(
+      () => assertProductionWorkerEnvironment(validProductionEnvironment({ [name]: value })),
+      (error) => error instanceof Error && error.message.includes(name)
+    );
+  }
+  assert.throws(
+    () => assertProductionApiEnvironment(validProductionEnvironment({
+      XYGO_EMAIL_RESEND_API_KEY: "not-a-resend-key-but-long-enough"
+    })),
+    /re_ key format/
+  );
+  assert.throws(
+    () => assertProductionApiEnvironment(validProductionEnvironment({
+      XYGO_EMAIL_WEBHOOK_SECRET: "not-a-svix-secret-but-long-enough"
+    })),
+    /whsec_ format/
+  );
+
+  for (const [name, values] of Object.entries({
+    XYGO_ALERT_OUTBOX_BACKLOG_MAX: ["-1", "1000001"],
+    XYGO_ALERT_OUTBOX_OLDEST_PENDING_SEC: ["0", "86401"],
+    XYGO_ALERT_EMAIL_FAILED_MAX: ["-1", "100001"],
+    XYGO_ALERT_EMAIL_STALE_SEC: ["59", "604801"],
+    XYGO_ALERT_DATABASE_LATENCY_MS: ["49", "30001"],
+    XYGO_ALERT_WORKER_HEARTBEAT_SEC: ["4", "3601"]
+  })) {
+    for (const value of values) {
+      assert.throws(
+        () => assertProductionApiEnvironment(validProductionEnvironment({ [name]: value })),
+        new RegExp(name)
+      );
+    }
+  }
+});
+
+test("monitoring runtime defaults and production thresholds map to readiness controls", () => {
+  assert.deepEqual(monitoringRuntimeOptionsFromEnvironment({}), {
+    outboxBacklogMax: 1000,
+    outboxOldestPendingMs: 900000,
+    emailFailedMax: 0,
+    emailStaleAfterMs: 900000,
+    databaseLatencyMs: 2000,
+    workerHeartbeatStaleMs: 120000
+  });
+  assert.deepEqual(monitoringRuntimeOptionsFromEnvironment(validProductionEnvironment()), {
+    outboxBacklogMax: 1000,
+    outboxOldestPendingMs: 900000,
+    emailFailedMax: 0,
+    emailStaleAfterMs: 900000,
+    databaseLatencyMs: 2000,
+    workerHeartbeatStaleMs: 120000
+  });
+});
+
 test("Postgres pool settings use safe defaults locally and bounded explicit values in production", () => {
   assert.deepEqual(postgresPoolOptionsFromEnvironment({}), {
     max: 10,
@@ -279,6 +355,10 @@ test("public browser variables and private secrets are explicitly disjoint", () 
   );
   assert.deepEqual(
     PUBLIC_WEB_RUNTIME_ENV_VARS.filter((name) => SERVER_ONLY_OUTBOX_ENV_VARS.includes(name)),
+    []
+  );
+  assert.deepEqual(
+    PUBLIC_WEB_RUNTIME_ENV_VARS.filter((name) => SERVER_ONLY_EMAIL_MONITORING_ENV_VARS.includes(name)),
     []
   );
 });

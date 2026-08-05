@@ -9,6 +9,15 @@ import { createPermitPackage } from "../../../../packages/permits/src/index.js";
 import { createReviewSession } from "../../../../packages/projects/src/index.js";
 import { generatePlatformBlueprint } from "../../../../packages/platform-blueprint/src/index.js";
 import { createFieldReport } from "../../../../packages/field-reporting/src/index.js";
+import {
+  applyEmailWebhookStatus,
+  createEmailSuppressionFromWebhook,
+  emailDeliveryIntentMatches,
+  mergeEmailSuppression,
+  normalizeEmailRecipient,
+  summarizeEmailDeliveryHealth,
+  summarizeWorkerHeartbeat
+} from "../../../../packages/email-delivery/src/index.js";
 import { cloneState, createSeedState } from "./seed.js";
 
 const migrationPath = path.resolve(process.cwd(), "infrastructure/migrations/0001_staged_api.sql");
@@ -45,6 +54,14 @@ export function createSqliteRepository({ filePath }) {
   ensureDirectory(filePath);
   const database = new DatabaseSync(filePath);
   database.exec(fs.readFileSync(migrationPath, "utf8"));
+  const webhookColumns = database.prepare("PRAGMA table_info(email_webhook_events)").all();
+  if (!webhookColumns.some((column) => column.name === "tenant_id")) {
+    database.exec("ALTER TABLE email_webhook_events ADD COLUMN tenant_id TEXT");
+  }
+  database.exec(
+    "CREATE INDEX IF NOT EXISTS idx_staged_email_webhook_tenant " +
+    "ON email_webhook_events(tenant_id, occurred_at)"
+  );
 
   const seedState = createSeedState();
   seedTable(database, "projects", seedState.projects, {
@@ -95,6 +112,24 @@ export function createSqliteRepository({ filePath }) {
       "INSERT INTO file_records (id, tenant_id, project_id, field_report_id, status, payload) VALUES (?, ?, ?, ?, ?, ?)"
     ),
     values: (row) => [row.id, row.tenantId, row.projectId, row.fieldReportId ?? null, row.status, JSON.stringify(row)]
+  });
+  seedTable(database, "email_deliveries", seedState.emailDeliveries, {
+    insert: (db) => db.prepare(
+      "INSERT INTO email_deliveries (id, tenant_id, recipient_user_id, recipient_email, kind, resource_type, resource_id, " +
+      "idempotency_key, status, attempts, provider, provider_message_id, provider_status_at, last_error, payload, created_at, " +
+      "updated_at, accepted_at, delivered_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    ),
+    values: (row) => [row.id, row.tenantId, row.recipientUserId, row.recipientEmail, row.kind, row.resourceType,
+      row.resourceId, row.idempotencyKey, row.status, row.attempts, row.provider, row.providerMessageId,
+      row.providerStatusAt, row.lastError, JSON.stringify(row), row.createdAt, row.updatedAt, row.acceptedAt, row.deliveredAt]
+  });
+  seedTable(database, "email_suppressions", seedState.emailSuppressions, {
+    insert: (db) => db.prepare(
+      "INSERT INTO email_suppressions (id, tenant_id, normalized_recipient, reason, source, provider_event_id, payload, created_at, updated_at) " +
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    ),
+    values: (row) => [row.id, row.tenantId, row.normalizedRecipient, row.reason, row.source,
+      row.providerEventId, JSON.stringify(row), row.createdAt, row.updatedAt]
   });
 
   return {
@@ -379,6 +414,129 @@ export function createSqliteRepository({ filePath }) {
       );
       if (result.changes !== 1) throw new Error("File record not found.");
       return cloneState(fileRecord);
+    },
+    createEmailDelivery(delivery) {
+      const existing = database.prepare("SELECT payload FROM email_deliveries WHERE idempotency_key = ?").get(delivery.idempotencyKey);
+      if (existing) {
+        const record = parseRow(existing);
+        if (!emailDeliveryIntentMatches(record, delivery)) {
+          const error = new Error("Email delivery idempotency key is bound to a different logical delivery.");
+          error.code = "email_idempotency_conflict";
+          throw error;
+        }
+        return { created: false, delivery: record };
+      }
+      database.prepare(
+        "INSERT INTO email_deliveries (id, tenant_id, recipient_user_id, recipient_email, kind, resource_type, resource_id, " +
+        "idempotency_key, status, attempts, provider, provider_message_id, provider_status_at, last_error, payload, created_at, " +
+        "updated_at, accepted_at, delivered_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      ).run(delivery.id, delivery.tenantId, delivery.recipientUserId, delivery.recipientEmail, delivery.kind,
+        delivery.resourceType, delivery.resourceId, delivery.idempotencyKey, delivery.status, delivery.attempts,
+        delivery.provider, delivery.providerMessageId, delivery.providerStatusAt, delivery.lastError, JSON.stringify(delivery),
+        delivery.createdAt, delivery.updatedAt, delivery.acceptedAt, delivery.deliveredAt);
+      return { created: true, delivery: cloneState(delivery) };
+    },
+    getEmailDeliveryById(deliveryId) {
+      return parseRow(database.prepare("SELECT payload FROM email_deliveries WHERE id = ?").get(deliveryId));
+    },
+    listEmailDeliveriesByTenant(tenantId) {
+      return parseRows(database.prepare("SELECT payload FROM email_deliveries WHERE tenant_id = ? ORDER BY created_at, id").all(tenantId));
+    },
+    getEmailSuppression(tenantId, recipientEmail) {
+      return parseRow(database.prepare(
+        "SELECT payload FROM email_suppressions WHERE tenant_id = ? AND normalized_recipient = ?"
+      ).get(tenantId, normalizeEmailRecipient(recipientEmail)));
+    },
+    listEmailSuppressionsByTenant(tenantId) {
+      return parseRows(database.prepare(
+        "SELECT payload FROM email_suppressions WHERE tenant_id = ? ORDER BY updated_at, id"
+      ).all(tenantId));
+    },
+    saveEmailDelivery(delivery) {
+      const result = database.prepare(
+        "UPDATE email_deliveries SET status = ?, attempts = ?, provider = ?, provider_message_id = ?, provider_status_at = ?, " +
+        "last_error = ?, payload = ?, updated_at = ?, accepted_at = ?, delivered_at = ? WHERE id = ? AND tenant_id = ?"
+      ).run(delivery.status, delivery.attempts, delivery.provider, delivery.providerMessageId, delivery.providerStatusAt,
+        delivery.lastError, JSON.stringify(delivery), delivery.updatedAt, delivery.acceptedAt, delivery.deliveredAt,
+        delivery.id, delivery.tenantId);
+      if (result.changes !== 1) throw new Error("Email delivery not found.");
+      return cloneState(delivery);
+    },
+    finalizeEmailDelivery({ delivery, auditEvent = null, auditEventFactory = null }) {
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        this.saveEmailDelivery(delivery);
+        const previous = parseRow(database.prepare("SELECT payload FROM audit_events WHERE tenant_id = ? ORDER BY rowid DESC LIMIT 1").get(delivery.tenantId));
+        const evidence = auditEventFactory ? auditEventFactory(previous?.eventHash ?? null) : auditEvent;
+        if (evidence) database.prepare("INSERT OR IGNORE INTO audit_events (event_id, tenant_id, payload) VALUES (?, ?, ?)")
+          .run(evidence.eventId, evidence.tenantId, JSON.stringify(evidence));
+        database.exec("COMMIT");
+        return cloneState(delivery);
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    applyEmailWebhook({ webhookId, event, auditEvent = null, auditEventFactory = null }) {
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        if (database.prepare("SELECT 1 FROM email_webhook_events WHERE id = ?").get(webhookId)) {
+          database.exec("COMMIT");
+          return { duplicate: true, delivery: null };
+        }
+        const delivery = parseRow(database.prepare("SELECT payload FROM email_deliveries WHERE provider_message_id = ?").get(event?.data?.email_id));
+        if (!delivery) {
+          database.exec("ROLLBACK");
+          return { duplicate: false, delivery: null };
+        }
+        const updated = applyEmailWebhookStatus(delivery, event);
+        this.saveEmailDelivery(updated);
+        const incomingSuppression = createEmailSuppressionFromWebhook(updated, event, { webhookId });
+        if (incomingSuppression) {
+          const existing = this.getEmailSuppression(incomingSuppression.tenantId, incomingSuppression.normalizedRecipient);
+          const suppression = mergeEmailSuppression(existing, incomingSuppression);
+          database.prepare(
+            "INSERT INTO email_suppressions (id, tenant_id, normalized_recipient, reason, source, provider_event_id, payload, created_at, updated_at) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (tenant_id, normalized_recipient) DO UPDATE SET " +
+            "reason = excluded.reason, source = excluded.source, provider_event_id = excluded.provider_event_id, " +
+            "payload = excluded.payload, updated_at = excluded.updated_at"
+          ).run(suppression.id, suppression.tenantId, suppression.normalizedRecipient, suppression.reason,
+            suppression.source, suppression.providerEventId, JSON.stringify(suppression), suppression.createdAt, suppression.updatedAt);
+        }
+        database.prepare(
+          "INSERT INTO email_webhook_events (id, tenant_id, provider, provider_message_id, event_type, occurred_at, payload, processed_at) " +
+          "VALUES (?, ?, 'resend', ?, ?, ?, ?, ?)"
+        ).run(webhookId, updated.tenantId, event.data.email_id, event.type, event.created_at, JSON.stringify(event), new Date().toISOString());
+        const previous = parseRow(database.prepare("SELECT payload FROM audit_events WHERE tenant_id = ? ORDER BY rowid DESC LIMIT 1").get(updated.tenantId));
+        const evidence = auditEventFactory ? auditEventFactory(updated, previous?.eventHash ?? null) : auditEvent;
+        if (evidence) database.prepare("INSERT OR IGNORE INTO audit_events (event_id, tenant_id, payload) VALUES (?, ?, ?)")
+          .run(evidence.eventId, evidence.tenantId, JSON.stringify(evidence));
+        database.exec("COMMIT");
+        return { duplicate: false, delivery: cloneState(updated) };
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    recordServiceHeartbeat(heartbeat) {
+      database.prepare(
+        "INSERT INTO service_heartbeats (service_name, instance_id, status, last_seen_at, details) VALUES (?, ?, ?, ?, ?) " +
+        "ON CONFLICT (service_name, instance_id) DO UPDATE SET status = excluded.status, last_seen_at = excluded.last_seen_at, details = excluded.details"
+      ).run(heartbeat.serviceName, heartbeat.instanceId, heartbeat.status, heartbeat.lastSeenAt, JSON.stringify(heartbeat.details ?? {}));
+      return cloneState(heartbeat);
+    },
+    checkEmailDeliveryReadiness(options = {}) {
+      return summarizeEmailDeliveryHealth(parseRows(database.prepare("SELECT payload FROM email_deliveries").all()), options);
+    },
+    checkWorkerReadiness(options = {}) {
+      const rows = database.prepare("SELECT service_name, instance_id, status, last_seen_at, details FROM service_heartbeats").all();
+      return summarizeWorkerHeartbeat(rows.map((row) => ({
+        serviceName: row.service_name,
+        instanceId: row.instance_id,
+        status: row.status,
+        lastSeenAt: row.last_seen_at,
+        details: JSON.parse(row.details)
+      })), options);
     },
     finalizeFileRecord({ fileRecord, auditEvent }) {
       database.exec("BEGIN IMMEDIATE");

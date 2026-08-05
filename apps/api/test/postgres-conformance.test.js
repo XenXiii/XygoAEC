@@ -8,13 +8,21 @@ import { handleApiRequest } from "../src/handlers.js";
 import { createPostgresRepository } from "../src/repositories/postgres.js";
 import { createAuditEvent, createOutboxEvent } from "../../../packages/audit/src/foundation.js";
 import {
+  createEmailDeliveryAuditEvent,
+  createEmailDelivery,
+  createLocalEmailSink,
+  queueEmailDelivery
+} from "../../../packages/email-delivery/src/index.js";
+import { createWorker } from "../../worker/src/worker.js";
+import {
   createPostgresOutboxStore,
   enqueueOutboxEvent,
   processOutboxOnce
 } from "../src/reliability/outbox.js";
 import {
   applyPostgresMigrations,
-  checkPostgresReadiness
+  checkPostgresReadiness,
+  POSTGRES_MIGRATIONS
 } from "../src/repositories/postgres-migrations.js";
 
 // Gated: only runs when a Postgres URL is provided (CI postgres job). Verifies the
@@ -76,6 +84,9 @@ test("postgres schema contains every canonical provisioning table", { skip }, as
   const expectedTables = [
     "audit_events",
     "business_profiles",
+    "email_deliveries",
+    "email_suppressions",
+    "email_webhook_events",
     "file_records",
     "oidc_identities",
     "outbox_jobs",
@@ -86,6 +97,7 @@ test("postgres schema contains every canonical provisioning table", { skip }, as
     "provisioning_events",
     "role_assignments",
     "schema_migrations",
+    "service_heartbeats",
     "tenants",
     "users"
   ];
@@ -101,7 +113,9 @@ test("postgres schema contains every canonical provisioning table", { skip }, as
     "0002_paid_client_provisioning",
     "0003_oidc_authorization",
     "0004_tenant_file_storage",
-    "0005_durable_outbox"
+    "0005_durable_outbox",
+    "0006_email_monitoring",
+    "0007_email_suppressions"
   ]);
 });
 
@@ -117,7 +131,9 @@ test("postgres readiness verifies connectivity and the complete migration chain"
     "0002_paid_client_provisioning",
     "0003_oidc_authorization",
     "0004_tenant_file_storage",
-    "0005_durable_outbox"
+    "0005_durable_outbox",
+    "0006_email_monitoring",
+    "0007_email_suppressions"
   ]);
 });
 
@@ -152,7 +168,8 @@ test("postgres repository refuses an unmigrated schema without changing it", { s
 
   await assert.rejects(
     () => repository.checkReadiness(),
-    (error) => error.code === "postgres_schema_not_current" && error.migrationStatus.pending.length === 5
+    (error) => error.code === "postgres_schema_not_current" &&
+      error.migrationStatus.pending.length === POSTGRES_MIGRATIONS.length
   );
   const tables = await adminPool.query(
     "SELECT table_name FROM information_schema.tables WHERE table_schema = $1",
@@ -323,6 +340,196 @@ test("postgres outbox is durable, safely claimed, tenant-scoped, idempotent, and
   assert.equal(replayed.status, "pending");
   assert.equal(replayed.replayCount, 1);
   assert.equal(replayed.lastReplayReason, "dependency recovered");
+});
+
+test("postgres email delivery is transactional, tenant-scoped, worker-backed, and observable", { skip }, async (t) => {
+  const suffix = `${process.pid}-${Date.now()}`;
+  const pg = (await import("pg")).default;
+  const cleanupPool = new pg.Pool({ connectionString: PG_URL });
+  await cleanupPool.query("DELETE FROM outbox_jobs");
+  await cleanupPool.query("DELETE FROM email_webhook_events");
+  await cleanupPool.query("DELETE FROM email_deliveries");
+  await cleanupPool.query("DELETE FROM service_heartbeats");
+  const crossTenantUser = {
+    id: `email-cross-tenant-user-${suffix}`,
+    tenantId: TENANT_B,
+    email: `email-cross-tenant-${suffix}@client.invalid`,
+    displayName: "Cross-tenant fixture",
+    status: "active"
+  };
+  await cleanupPool.query(
+    "INSERT INTO tenants (id, name) VALUES ($1,$1) ON CONFLICT (id) DO NOTHING",
+    [TENANT_B]
+  );
+  await cleanupPool.query(
+    "INSERT INTO users (id, tenant_id, email, display_name, status, payload) VALUES ($1,$2,$3,$4,$5,$6)",
+    [
+      crossTenantUser.id,
+      crossTenantUser.tenantId,
+      crossTenantUser.email,
+      crossTenantUser.displayName,
+      crossTenantUser.status,
+      crossTenantUser
+    ]
+  );
+  await cleanupPool.end();
+  const repository = createPostgresRepository({ connectionString: PG_URL, seedSyntheticData: true });
+  const outbox = createPostgresOutboxStore({ connectionString: PG_URL });
+  const sink = createLocalEmailSink();
+  t.after(async () => Promise.all([repository.close(), outbox.close()]));
+  const delivery = createEmailDelivery({
+    tenantId: TENANT_A,
+    recipientEmail: "owner@client.invalid",
+    kind: "report_ready",
+    resourceType: "field_report",
+    resourceId: "field-report-commercial-b",
+    idempotencyKey: `${TENANT_A}:email:pg:${suffix}`,
+    templateData: {
+      recipientName: "Client Owner",
+      reportTitle: "Approved Postgres report",
+      actionUrl: "https://app.xygoaec.com/client-portal.html"
+    }
+  }, { id: `email-pg-${suffix}` });
+  const first = await queueEmailDelivery({ repository, delivery });
+  const second = await queueEmailDelivery({ repository, delivery });
+  assert.equal(first.created, true);
+  assert.equal(second.created, false);
+  const conflictingDelivery = createEmailDelivery({
+    tenantId: TENANT_A,
+    recipientEmail: "different@client.invalid",
+    kind: "report_ready",
+    resourceType: "field_report",
+    resourceId: "field-report-commercial-b",
+    idempotencyKey: delivery.idempotencyKey,
+    templateData: {
+      recipientName: "Different Recipient",
+      reportTitle: "Approved Postgres report",
+      actionUrl: "https://app.xygoaec.com/client-portal.html"
+    }
+  }, { id: `email-pg-conflict-${suffix}` });
+  await assert.rejects(
+    () => queueEmailDelivery({ repository, delivery: conflictingDelivery }),
+    (error) => error.code === "email_idempotency_conflict"
+  );
+  assert.ok((await repository.listEmailDeliveriesByTenant(TENANT_A)).some((item) => item.id === delivery.id));
+  assert.ok(!(await repository.listEmailDeliveriesByTenant(TENANT_B)).some((item) => item.id === delivery.id));
+  const crossTenantRecipient = createEmailDelivery({
+    tenantId: TENANT_A,
+    recipientUserId: crossTenantUser.id,
+    recipientEmail: crossTenantUser.email,
+    kind: "activation",
+    idempotencyKey: `${TENANT_A}:email:cross-user:${suffix}`,
+    templateData: {
+      recipientName: "Wrong Tenant",
+      workspaceName: "Commercial",
+      actionUrl: "https://app.xygoaec.com/client-portal.html"
+    }
+  }, { id: `email-cross-user-${suffix}` });
+  await assert.rejects(
+    () => queueEmailDelivery({ repository, delivery: crossTenantRecipient }),
+    (error) => error.code === "23503"
+  );
+  assert.equal((await outbox.list({ tenantId: TENANT_A })).filter(
+    (job) => job.event.eventType === "email.delivery.requested" && job.event.aggregateId === delivery.id
+  ).length, 1);
+
+  const worker = createWorker({ store: outbox, repository, emailProvider: sink, workerId: `pg-email-worker-${suffix}` });
+  assert.equal((await worker.tick(Date.now())).processed, 1);
+  assert.equal((await repository.getEmailDeliveryById(delivery.id)).status, "accepted");
+  assert.equal(sink.all().length, 1);
+  assert.equal((await repository.checkEmailDeliveryReadiness({ maxFailed: 0 })).ready, true);
+  assert.equal((await repository.checkWorkerReadiness({ staleAfterMs: 60_000 })).ready, true);
+  assert.ok((await repository.listAuditEventsByTenant(TENANT_A)).some(
+    (event) => event.action === "email.delivery.accepted" && event.resourceId === delivery.id
+  ));
+  const accepted = await repository.getEmailDeliveryById(delivery.id);
+  const deliveredAt = new Date(Date.now() + 1000).toISOString();
+  const webhookEvent = {
+    type: "email.delivered",
+    created_at: deliveredAt,
+    data: { email_id: accepted.providerMessageId }
+  };
+  const webhookResult = await repository.applyEmailWebhook({
+    webhookId: `pg-webhook-${suffix}`,
+    event: webhookEvent,
+    auditEventFactory: (updated, previousHash) => createEmailDeliveryAuditEvent(updated, {
+      action: "email.delivery.delivered",
+      actorId: "resend-webhook",
+      previousHash,
+      timestamp: deliveredAt,
+      suffix: `webhook-pg-${suffix}`
+    })
+  });
+  assert.equal(webhookResult.delivery.status, "delivered");
+  assert.equal((await repository.applyEmailWebhook({ webhookId: `pg-webhook-${suffix}`, event: webhookEvent })).duplicate, true);
+  const verificationPool = new pg.Pool({ connectionString: PG_URL });
+  t.after(() => verificationPool.end());
+  const persistedWebhook = await verificationPool.query(
+    "SELECT tenant_id FROM email_webhook_events WHERE id = $1",
+    [`pg-webhook-${suffix}`]
+  );
+  assert.equal(persistedWebhook.rows[0].tenant_id, TENANT_A);
+  const complainedAt = new Date(Date.now() + 2000).toISOString();
+  const complaintEvent = {
+    type: "email.complained",
+    created_at: complainedAt,
+    data: { email_id: accepted.providerMessageId }
+  };
+  await repository.applyEmailWebhook({
+    webhookId: `pg-webhook-complaint-${suffix}`,
+    event: complaintEvent,
+    auditEventFactory: (updated, previousHash) => createEmailDeliveryAuditEvent(updated, {
+      action: "email.delivery.complained",
+      actorId: "resend-webhook",
+      previousHash,
+      timestamp: complainedAt,
+      suffix: `webhook-pg-complaint-${suffix}`
+    })
+  });
+  assert.equal((await repository.getEmailSuppression(TENANT_A, delivery.recipientEmail)).reason, "complaint");
+  assert.equal((await repository.listEmailSuppressionsByTenant(TENANT_B)).length, 0);
+
+  const suppressedDelivery = createEmailDelivery({
+    tenantId: TENANT_A,
+    recipientEmail: delivery.recipientEmail.toUpperCase(),
+    kind: "report_ready",
+    resourceType: "field_report",
+    resourceId: "field-report-commercial-b",
+    idempotencyKey: `${TENANT_A}:email:pg-suppressed:${suffix}`,
+    templateData: {
+      recipientName: "Client Owner",
+      reportTitle: "Suppressed Postgres report",
+      actionUrl: "https://app.xygoaec.com/client-portal.html"
+    }
+  }, { id: `email-pg-suppressed-${suffix}` });
+  await queueEmailDelivery({ repository, delivery: suppressedDelivery });
+  assert.equal((await worker.tick(Date.now() + 3000)).processed, 1);
+  assert.equal((await repository.getEmailDeliveryById(suppressedDelivery.id)).status, "suppressed");
+  assert.equal(sink.all().length, 1, "suppressed Postgres delivery must not call the provider");
+  const failing = createPostgresRepository({
+    connectionString: PG_URL,
+    seedSyntheticData: true,
+    beforeOutboxCommit: async () => { throw new Error("forced email outbox failure"); }
+  });
+  t.after(() => failing.close());
+  const rollbackDelivery = createEmailDelivery({
+    tenantId: TENANT_A,
+    recipientEmail: "owner@client.invalid",
+    kind: "portal_update",
+    resourceType: "project",
+    resourceId: "project-commercial-b",
+    idempotencyKey: `${TENANT_A}:email:pg-rollback:${suffix}`,
+    templateData: {
+      recipientName: "Client Owner",
+      projectName: "Commercial Project",
+      updateSummary: "A staged update is ready.",
+      actionUrl: "https://app.xygoaec.com/client-portal.html"
+    }
+  }, { id: `email-pg-rollback-${suffix}` });
+  await assert.rejects(() => queueEmailDelivery({ repository: failing, delivery: rollbackDelivery }), /forced email outbox failure/);
+  assert.equal(await repository.getEmailDeliveryById(rollbackDelivery.id), null);
+  assert.ok(!(await outbox.list({ tenantId: TENANT_A })).some((job) => job.event.aggregateId === rollbackDelivery.id));
+  await worker.stop();
 });
 
 test("postgres application writes, audit evidence, and outbox enqueue commit or roll back together", { skip }, async (t) => {
@@ -614,8 +821,13 @@ test("verified OIDC identity resolves tenant and role from canonical Postgres re
 });
 
 test("managed IdP binding activates a provisioned user transactionally", { skip }, async (t) => {
-  const repo = createPostgresRepository({ connectionString: PG_URL, seedSyntheticData: true });
-  t.after(() => repo.close());
+  const repo = createPostgresRepository({
+    connectionString: PG_URL,
+    seedSyntheticData: true,
+    webAppUrl: "https://app.xygoaec.com"
+  });
+  const outbox = createPostgresOutboxStore({ connectionString: PG_URL });
+  t.after(async () => Promise.all([repo.close(), outbox.close()]));
   const slug = `pg-managed-idp-bind-${process.pid}`;
   const tenantId = `tenant-${slug}`;
   const ownerEmail = `owner@${slug}.invalid`;
@@ -659,6 +871,24 @@ test("managed IdP binding activates a provisioned user transactionally", { skip 
     (await repo.listAuditEventsByTenant(tenantId)).filter((event) => event.action === "managed_idp.identity_bound").length,
     1
   );
+  const activationDeliveries = (await repo.listEmailDeliveriesByTenant(tenantId)).filter(
+    (delivery) => delivery.kind === "activation" && delivery.recipientUserId === first.identity.userId
+  );
+  assert.equal(activationDeliveries.length, 1);
+  assert.equal(activationDeliveries[0].status, "queued");
+  assert.equal(
+    (await outbox.list({ tenantId })).filter(
+      (job) => job.event.eventType === "email.delivery.requested" &&
+        job.event.aggregateId === activationDeliveries[0].id
+    ).length,
+    1
+  );
+  assert.equal(
+    (await repo.listAuditEventsByTenant(tenantId)).filter(
+      (event) => event.action === "email.delivery.queued" && event.resourceId === activationDeliveries[0].id
+    ).length,
+    1
+  );
 
   await assert.rejects(
     () => repo.bindOidcIdentity({
@@ -694,6 +924,7 @@ test("managed IdP binding rolls back identity and audit evidence on failure", { 
   const failing = createPostgresRepository({
     connectionString: PG_URL,
     seedSyntheticData: true,
+    webAppUrl: "https://app.xygoaec.com",
     beforeOidcBindingCommit: async () => {
       throw new Error("forced OIDC binding failure");
     }
@@ -710,6 +941,12 @@ test("managed IdP binding rolls back identity and audit evidence on failure", { 
     /forced OIDC binding failure/
   );
   assert.deepEqual(await base.listOidcIdentitiesByTenant(tenantId), []);
+  assert.deepEqual(await base.listEmailDeliveriesByTenant(tenantId), []);
+  const rollbackOutbox = createPostgresOutboxStore({ connectionString: PG_URL });
+  t.after(() => rollbackOutbox.close());
+  assert.ok(!(await rollbackOutbox.list({ tenantId })).some(
+    (job) => job.event.eventType === "email.delivery.requested"
+  ));
   assert.equal((await base.listAuditEventsByTenant(tenantId)).length, auditCountBefore);
 });
 

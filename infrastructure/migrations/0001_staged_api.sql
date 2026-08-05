@@ -98,5 +98,66 @@ CREATE TABLE IF NOT EXISTS outbox_jobs (
 CREATE INDEX IF NOT EXISTS idx_outbox_jobs_ready ON outbox_jobs(status, next_attempt_at, created_at);
 CREATE INDEX IF NOT EXISTS idx_outbox_jobs_tenant ON outbox_jobs(tenant_id, status, created_at);
 
+CREATE TABLE IF NOT EXISTS email_deliveries (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  recipient_user_id TEXT,
+  recipient_email TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  resource_type TEXT,
+  resource_id TEXT,
+  idempotency_key TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  provider TEXT,
+  provider_message_id TEXT UNIQUE,
+  provider_status_at TEXT,
+  last_error TEXT,
+  payload TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  accepted_at TEXT,
+  delivered_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_staged_email_deliveries_tenant_status
+  ON email_deliveries(tenant_id, status, created_at);
+
+CREATE TABLE IF NOT EXISTS email_suppressions (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  normalized_recipient TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  source TEXT NOT NULL,
+  provider_event_id TEXT,
+  payload TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (tenant_id, normalized_recipient)
+);
+
+CREATE INDEX IF NOT EXISTS idx_staged_email_suppressions_tenant
+  ON email_suppressions(tenant_id, updated_at);
+
+CREATE TABLE IF NOT EXISTS email_webhook_events (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  provider_message_id TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  occurred_at TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  processed_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS service_heartbeats (
+  service_name TEXT NOT NULL,
+  instance_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL,
+  details TEXT NOT NULL,
+  PRIMARY KEY (service_name, instance_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_staged_file_records_tenant ON file_records(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_staged_file_records_project ON file_records(tenant_id, project_id);

@@ -140,6 +140,13 @@ test("paid-client activation works end to end through OIDC, HTTP, and canonical 
     primaryColor: "#654321",
     subjects: betaSubjects
   }));
+  await repository.recordServiceHeartbeat({
+    serviceName: "worker",
+    instanceId: `activation-e2e-worker-${nonce}`,
+    status: "ready",
+    lastSeenAt: new Date().toISOString(),
+    details: { fixture: true }
+  });
 
   server = createServer({
     env: runtimeEnv,

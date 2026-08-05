@@ -13,9 +13,13 @@ import { createRateLimiter } from "./http/rate-limit.js";
 import { createMetrics } from "./telemetry/metrics.js";
 import { rootLogger } from "./telemetry/logger.js";
 import { assertStagedMode } from "../../../packages/staged-mode/src/index.js";
-import { assertProductionApiEnvironment } from "../../../packages/production-config/src/index.js";
+import {
+  assertProductionApiEnvironment,
+  monitoringRuntimeOptionsFromEnvironment
+} from "../../../packages/production-config/src/index.js";
 import { createStorageFromEnv } from "../../../packages/file-storage/src/index.js";
 import { createOutboxStoreFromEnv } from "./reliability/outbox.js";
+import { handleEmailWebhook } from "./email-webhook.js";
 
 function sendJson(res, status, body, extraHeaders = {}) {
   if (res.headersSent) {
@@ -66,6 +70,7 @@ export function createServer({
   const repository = injectedRepository ?? createRepositoryFromEnv(env);
   const storage = injectedStorage ?? createStorageFromEnv(env);
   const outbox = injectedOutbox ?? createOutboxStoreFromEnv(env, { service: "api" });
+  const monitoringOptions = monitoringRuntimeOptionsFromEnvironment(env);
 
   const maxBodyBytes = Number(env.XYGO_MAX_BODY_BYTES ?? 1_048_576);
   const requestTimeoutMs = Number(env.XYGO_REQUEST_TIMEOUT_MS ?? 15_000);
@@ -83,16 +88,79 @@ export function createServer({
       error.code = "server_draining";
       throw error;
     }
-    const [databaseReadiness, storageReadiness, outboxReadiness] = await Promise.all([
-      typeof repository.checkReadiness === "function" ? repository.checkReadiness() : { ready: true },
-      typeof storage.checkReadiness === "function" ? storage.checkReadiness() : { ready: true },
-      outbox.checkReadiness({
+    const requireHealthy = env.NODE_ENV === "production" || env.STAGED_MODE === "false";
+    const capture = async (operation) => {
+      try {
+        return { readiness: await operation, error: null };
+      } catch (error) {
+        return {
+          readiness: { ready: false, reason: error?.code ?? "dependency_not_ready" },
+          error
+        };
+      }
+    };
+    const checks = await Promise.all([
+      capture(typeof repository.checkReadiness === "function" ? repository.checkReadiness() : { ready: true }),
+      capture(typeof storage.checkReadiness === "function" ? storage.checkReadiness() : { ready: true }),
+      capture(outbox.checkReadiness({
         staleAfterMs: Number(env.XYGO_WORKER_STALE_AFTER_MS ?? 60_000),
         maxDeadJobs: Number(env.XYGO_WORKER_MAX_DEAD_JOBS ?? 0),
-        requireHealthy: env.NODE_ENV === "production" || env.STAGED_MODE === "false"
-      })
+        maxBacklog: monitoringOptions.outboxBacklogMax,
+        oldestPendingMs: monitoringOptions.outboxOldestPendingMs,
+        requireHealthy: false
+      })),
+      capture(repository.checkEmailDeliveryReadiness?.({
+        staleAfterMs: monitoringOptions.emailStaleAfterMs,
+        maxFailed: monitoringOptions.emailFailedMax,
+        requireHealthy: false
+      }) ?? { ready: true, supported: false }),
+      capture(repository.checkWorkerReadiness?.({
+        staleAfterMs: monitoringOptions.workerHeartbeatStaleMs,
+        requireHealthy: false
+      }) ?? { ready: !requireHealthy, supported: false })
     ]);
-    return { ready: true, database: databaseReadiness, storage: storageReadiness, outbox: outboxReadiness };
+    let [databaseReadiness, storageReadiness, outboxReadiness, emailReadiness, workerReadiness] = checks.map(
+      (check) => check.readiness
+    );
+    if (databaseReadiness.ready && databaseReadiness.latencyMs > monitoringOptions.databaseLatencyMs) {
+      databaseReadiness = {
+        ...databaseReadiness,
+        ready: false,
+        reason: "database_latency_unhealthy"
+      };
+    }
+    const dependencies = {
+      database: databaseReadiness,
+      storage: storageReadiness,
+      outbox: outboxReadiness,
+      worker: workerReadiness,
+      email_delivery: emailReadiness
+    };
+    for (const [dependency, readiness] of Object.entries(dependencies)) {
+      metrics.setGauge?.("xygo_dependency_ready", { dependency }, readiness.ready === true ? 1 : 0);
+    }
+    metrics.setGauge?.("xygo_outbox_backlog", {}, outboxReadiness.backlog ?? 0);
+    metrics.setGauge?.("xygo_email_delivery_failures", {}, emailReadiness.failures ?? 0);
+
+    const hardFailure = checks.find((check) => check.error)?.error;
+    if (hardFailure) throw hardFailure;
+    const unhealthy = Object.entries(dependencies).find(([, readiness]) => readiness.ready !== true);
+    if (requireHealthy && unhealthy) {
+      const [dependency, readiness] = unhealthy;
+      const error = new Error(`${dependency} readiness failed.`);
+      error.code = readiness.reason ?? `${dependency}_unhealthy`;
+      error.readiness = dependencies;
+      throw error;
+    }
+    return {
+      ready: true,
+      api: { ready: true, release: env.XYGO_RELEASE ?? "local" },
+      database: databaseReadiness,
+      storage: storageReadiness,
+      outbox: outboxReadiness,
+      worker: workerReadiness,
+      emailDelivery: emailReadiness
+    };
   };
 
   const server = http.createServer((req, res) => {
@@ -140,8 +208,14 @@ export function createServer({
       return;
     }
     if (req.method === "GET" && path === "/metrics") {
-      res.writeHead(200, baseResponseHeaders({ "content-type": "text/plain; version=0.0.4" }));
-      res.end(metrics.render());
+      // Refresh dependency gauges on every scrape. A failed dependency still
+      // returns metrics (with a zero gauge) so alerting is not blinded.
+      checkReadiness()
+        .catch(() => null)
+        .finally(() => {
+          res.writeHead(200, baseResponseHeaders({ "content-type": "text/plain; version=0.0.4" }));
+          res.end(metrics.render());
+        });
       return;
     }
 
@@ -233,6 +307,26 @@ export function createServer({
       const combinedBody = chunks.length > 0 ? Buffer.concat(chunks) : null;
       const body = isFileContent ? (combinedBody ?? Buffer.alloc(0)) : combinedBody?.toString("utf8") ?? null;
 
+      if (req.method === "POST" && path === "/webhooks/email") {
+        if (String(env.XYGO_EMAIL_TRANSPORT ?? "sink").toLowerCase() !== "resend") {
+          sendJson(res, 404, { error: "not_found", message: "Email webhook is not configured.", staged: true });
+          return;
+        }
+        handleEmailWebhook({
+          rawBody: body ?? "",
+          headers: req.headers,
+          repository,
+          webhookSecret: env.XYGO_EMAIL_WEBHOOK_SECRET,
+          auditSigningKey: env.XYGO_AUDIT_SIGNING_KEY ?? null
+        })
+          .then((result) => sendJson(res, result.status, result.body))
+          .catch((error) => {
+            logger.error?.("email.webhook_failed", { code: error?.code ?? "email_webhook_failed" });
+            sendJson(res, 500, { error: "internal_error", message: "Email webhook processing failed.", staged: true });
+          });
+        return;
+      }
+
       resolvePrincipal({ headers: req.headers, config: authConfig, jwks, repository })
         .then(async (principal) => {
           const result = await handleApiRequest({
@@ -245,7 +339,8 @@ export function createServer({
             outbox,
             principal,
             authConfig,
-            auditSigningKey: env.XYGO_AUDIT_SIGNING_KEY ?? null
+            auditSigningKey: env.XYGO_AUDIT_SIGNING_KEY ?? null,
+            webAppUrl: env.XYGO_WEB_APP_URL ?? "http://127.0.0.1:8080"
           });
           sendResult(res, result);
         })

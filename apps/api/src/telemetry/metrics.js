@@ -2,6 +2,11 @@
 // counts by method/status and a request-duration histogram. render() produces the
 // text exposition format served at /metrics. A drop-in seam for OpenTelemetry later.
 const DURATION_BUCKETS_MS = [5, 10, 25, 50, 100, 250, 500, 1000, 2500];
+const GAUGE_HELP = Object.freeze({
+  xygo_dependency_ready: "Dependency readiness (1 ready, 0 not ready).",
+  xygo_outbox_backlog: "Current pending and retryable outbox jobs.",
+  xygo_email_delivery_failures: "Current failed, bounced, or complained email deliveries; intentional suppression skips are excluded."
+});
 
 function labelKey(labels) {
   return Object.entries(labels)
@@ -12,6 +17,7 @@ function labelKey(labels) {
 
 export function createMetrics() {
   const counters = new Map(); // name|labelKey -> { name, labels, value }
+  const gauges = new Map();
   const durations = { buckets: new Map(DURATION_BUCKETS_MS.map((b) => [b, 0])), sum: 0, count: 0 };
 
   function inc(name, labels = {}, by = 1) {
@@ -34,6 +40,11 @@ export function createMetrics() {
     }
   }
 
+  function setGauge(name, labels = {}, value = 0) {
+    const key = `${name}|${labelKey(labels)}`;
+    gauges.set(key, { name, labels, value: Number(value) });
+  }
+
   function recordRequest({ method, status, durationMs }) {
     inc("xygo_http_requests_total", { method, status: String(status) });
     if (typeof durationMs === "number") {
@@ -49,6 +60,15 @@ export function createMetrics() {
       const lk = labelKey(labels);
       lines.push(`${name}${lk ? `{${lk}}` : ""} ${value}`);
     }
+    for (const name of new Set([...gauges.values()].map((gauge) => gauge.name))) {
+      lines.push(`# HELP ${name} ${GAUGE_HELP[name] ?? "Application gauge."}`);
+      lines.push(`# TYPE ${name} gauge`);
+      for (const gauge of gauges.values()) {
+        if (gauge.name !== name) continue;
+        const lk = labelKey(gauge.labels);
+        lines.push(`${name}${lk ? `{${lk}}` : ""} ${gauge.value}`);
+      }
+    }
     lines.push("# HELP xygo_http_request_duration_ms Request duration histogram (ms).");
     lines.push("# TYPE xygo_http_request_duration_ms histogram");
     let cumulative = 0;
@@ -62,5 +82,5 @@ export function createMetrics() {
     return `${lines.join("\n")}\n`;
   }
 
-  return { inc, observeDurationMs, recordRequest, render };
+  return { inc, setGauge, observeDurationMs, recordRequest, render };
 }

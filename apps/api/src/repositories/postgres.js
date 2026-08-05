@@ -8,6 +8,16 @@ import { createPermitPackage } from "../../../../packages/permits/src/index.js";
 import { createReviewSession } from "../../../../packages/projects/src/index.js";
 import { generatePlatformBlueprint } from "../../../../packages/platform-blueprint/src/index.js";
 import { createFieldReport } from "../../../../packages/field-reporting/src/index.js";
+import {
+  applyEmailWebhookStatus,
+  createEmailSuppressionFromWebhook,
+  createEmailDelivery,
+  createEmailDeliveryOutboxEvent,
+  emailDeliveryIntentMatches,
+  mergeEmailSuppression,
+  normalizeEmailRecipient,
+  summarizeWorkerHeartbeat
+} from "../../../../packages/email-delivery/src/index.js";
 import { createAuditEvent } from "../../../../packages/audit/src/foundation.js";
 import { buildStagedTenantProvisioning } from "../../../../packages/activation/src/provision-tenant.js";
 import { createSeedState } from "./seed.js";
@@ -79,7 +89,8 @@ export function createPostgresRepository({
   seedSyntheticData = false,
   beforeProvisioningCommit = null,
   beforeOidcBindingCommit = null,
-  beforeOutboxCommit = null
+  beforeOutboxCommit = null,
+  webAppUrl = null
 }) {
   if (!connectionString) {
     throw new Error("connectionString is required for postgres repository.");
@@ -232,6 +243,28 @@ export function createPostgresRepository({
 
   const payloads = (result) => result.rows.map((r) => r.payload);
   const one = (result) => (result.rows[0] ? result.rows[0].payload : null);
+
+  async function updateEmailDelivery(client, delivery) {
+    const result = await client.query(
+      "UPDATE email_deliveries SET status = $1, attempts = $2, provider = $3, provider_message_id = $4, " +
+        "provider_status_at = $5, last_error = $6, payload = $7, updated_at = $8, accepted_at = $9, delivered_at = $10 " +
+        "WHERE id = $11 AND tenant_id = $12",
+      [delivery.status, delivery.attempts, delivery.provider, delivery.providerMessageId, delivery.providerStatusAt,
+        delivery.lastError, delivery, delivery.updatedAt, delivery.acceptedAt, delivery.deliveredAt,
+        delivery.id, delivery.tenantId]
+    );
+    if (result.rowCount !== 1) throw new Error("Email delivery not found.");
+    return delivery;
+  }
+
+  async function insertAuditEvent(client, event) {
+    await client.query(
+      "INSERT INTO audit_events (event_id, tenant_id, action, resource_type, resource_id, previous_hash, event_hash, signature, payload) " +
+        "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (event_id) DO NOTHING",
+      [event.eventId, event.tenantId, event.action, event.resourceType, event.resourceId,
+        event.previousHash ?? null, event.eventHash, event.signature ?? null, event]
+    );
+  }
 
   async function readProvisionedTenant(client, tenantId) {
     const scopedPayloads = async (table) =>
@@ -399,7 +432,8 @@ export function createPostgresRepository({
         }
 
         const userResult = await client.query(
-          "SELECT u.id, u.tenant_id, u.email, u.status, t.status AS tenant_status, r.role " +
+          "SELECT u.id, u.tenant_id, u.email, u.display_name, u.status, t.status AS tenant_status, " +
+            "t.name AS tenant_name, r.role " +
             "FROM users u " +
             "JOIN tenants t ON t.id = u.tenant_id " +
             "JOIN role_assignments r ON r.user_id = u.id AND r.tenant_id = u.tenant_id " +
@@ -477,6 +511,50 @@ export function createPostgresRepository({
           "INSERT INTO audit_events (event_id, tenant_id, action, resource_type, resource_id, previous_hash, event_hash, signature, payload) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
           [auditEvent.eventId, tenantId, auditEvent.action, auditEvent.resourceType, auditEvent.resourceId, auditEvent.previousHash, auditEvent.eventHash, auditEvent.signature ?? null, auditEvent]
         );
+
+        if (webAppUrl) {
+          const delivery = createEmailDelivery({
+            tenantId,
+            recipientUserId: user.id,
+            recipientEmail: user.email,
+            kind: "activation",
+            resourceType: "oidc_identity",
+            resourceId: identity.id,
+            idempotencyKey: `${tenantId}:email:activation:${identity.id}`,
+            templateData: {
+              recipientName: user.display_name ?? user.email,
+              workspaceName: user.tenant_name ?? "Xygo",
+              actionUrl: `${webAppUrl.replace(/\/$/, "")}/client-portal.html`
+            }
+          }, { id: `${identity.id}-activation-email`, now: new Date(boundAt) });
+          await client.query(
+            "INSERT INTO email_deliveries " +
+              "(id, tenant_id, recipient_user_id, recipient_email, kind, resource_type, resource_id, idempotency_key, status, " +
+              "attempts, payload, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12)",
+            [delivery.id, delivery.tenantId, delivery.recipientUserId, delivery.recipientEmail, delivery.kind,
+              delivery.resourceType, delivery.resourceId, delivery.idempotencyKey, delivery.status, delivery.attempts,
+              delivery, delivery.createdAt]
+          );
+          const queuedAudit = createAuditEvent({
+            eventId: `${delivery.id}-queued-audit`,
+            tenantId,
+            actorType: "system",
+            actorId,
+            action: "email.delivery.queued",
+            resourceType: "email_delivery",
+            resourceId: delivery.id,
+            afterStateRef: delivery.status,
+            correlationId: identity.id,
+            requestId: identity.id,
+            timestamp: boundAt,
+            previousHash: auditEvent.eventHash,
+            signingKey: auditSigningKey
+          });
+          await insertAuditEvent(client, queuedAudit);
+          await transactionContext.run(client, () => enqueueOutboxEvent(createEmailDeliveryOutboxEvent(delivery), {
+            idempotencyKey: delivery.idempotencyKey
+          }));
+        }
 
         if (beforeOidcBindingCommit) {
           await beforeOidcBindingCommit({ client, identity, auditEvent });
@@ -682,6 +760,180 @@ export function createPostgresRepository({
         [report.id, report.tenantId, report.projectId ?? null, report.status, report]
       );
       return report;
+    },
+    async createEmailDelivery(delivery) {
+      const result = await query(
+        "INSERT INTO email_deliveries " +
+          "(id, tenant_id, recipient_user_id, recipient_email, kind, resource_type, resource_id, idempotency_key, status, " +
+          "attempts, provider, provider_message_id, provider_status_at, last_error, payload, created_at, updated_at, accepted_at, delivered_at) " +
+          "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) " +
+          "ON CONFLICT (idempotency_key) DO NOTHING RETURNING payload",
+        [delivery.id, delivery.tenantId, delivery.recipientUserId, delivery.recipientEmail, delivery.kind,
+          delivery.resourceType, delivery.resourceId, delivery.idempotencyKey, delivery.status, delivery.attempts,
+          delivery.provider, delivery.providerMessageId, delivery.providerStatusAt, delivery.lastError, delivery,
+          delivery.createdAt, delivery.updatedAt, delivery.acceptedAt, delivery.deliveredAt]
+      );
+      if (result.rows[0]) return { created: true, delivery: result.rows[0].payload };
+      const existing = await query("SELECT payload FROM email_deliveries WHERE idempotency_key = $1", [delivery.idempotencyKey]);
+      const record = existing.rows[0]?.payload;
+      if (!emailDeliveryIntentMatches(record, delivery)) {
+        const error = new Error("Email delivery idempotency key is bound to a different logical delivery.");
+        error.code = "email_idempotency_conflict";
+        throw error;
+      }
+      return { created: false, delivery: record };
+    },
+    async getEmailDeliveryById(deliveryId) {
+      return one(await query("SELECT payload FROM email_deliveries WHERE id = $1", [deliveryId]));
+    },
+    async listEmailDeliveriesByTenant(tenantId) {
+      return payloads(await query(
+        "SELECT payload FROM email_deliveries WHERE tenant_id = $1 ORDER BY created_at, id",
+        [tenantId]
+      ));
+    },
+    async getEmailSuppression(tenantId, recipientEmail) {
+      return one(await query(
+        "SELECT payload FROM email_suppressions WHERE tenant_id = $1 AND normalized_recipient = $2",
+        [tenantId, normalizeEmailRecipient(recipientEmail)]
+      ));
+    },
+    async listEmailSuppressionsByTenant(tenantId) {
+      return payloads(await query(
+        "SELECT payload FROM email_suppressions WHERE tenant_id = $1 ORDER BY updated_at, id",
+        [tenantId]
+      ));
+    },
+    async saveEmailDelivery(delivery) {
+      const transactionClient = transactionContext.getStore();
+      return updateEmailDelivery(transactionClient ?? await pool(), delivery);
+    },
+    async finalizeEmailDelivery({ delivery, auditEvent = null, auditEventFactory = null }) {
+      const p = await pool();
+      return runPostgresTransaction(p, async (client) => {
+        await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`audit:${delivery.tenantId}`]);
+        const previous = await client.query(
+          "SELECT payload FROM audit_events WHERE tenant_id = $1 ORDER BY seq DESC LIMIT 1",
+          [delivery.tenantId]
+        );
+        const evidence = auditEventFactory
+          ? auditEventFactory(previous.rows[0]?.payload?.eventHash ?? null)
+          : auditEvent;
+        await updateEmailDelivery(client, delivery);
+        if (evidence) await insertAuditEvent(client, evidence);
+        return delivery;
+      });
+    },
+    async applyEmailWebhook({ webhookId, event, auditEvent = null, auditEventFactory = null }) {
+      const p = await pool();
+      return runPostgresTransaction(p, async (client) => {
+        const duplicate = await client.query("SELECT 1 FROM email_webhook_events WHERE id = $1", [webhookId]);
+        if (duplicate.rows[0]) return { duplicate: true, delivery: null };
+        const lookup = await client.query(
+          "SELECT tenant_id FROM email_deliveries WHERE provider_message_id = $1",
+          [event?.data?.email_id]
+        );
+        if (!lookup.rows[0]) return { duplicate: false, delivery: null };
+        // Use the same audit-lock -> delivery-row-lock order as worker
+        // finalization so a provider callback cannot deadlock with acceptance.
+        await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`audit:${lookup.rows[0].tenant_id}`]);
+        const result = await client.query(
+          "SELECT payload FROM email_deliveries WHERE provider_message_id = $1 FOR UPDATE",
+          [event.data.email_id]
+        );
+        const delivery = result.rows[0]?.payload;
+        if (!delivery) return { duplicate: false, delivery: null };
+        const updated = applyEmailWebhookStatus(delivery, event);
+        const incomingSuppression = createEmailSuppressionFromWebhook(updated, event, { webhookId });
+        if (incomingSuppression) {
+          const existingResult = await client.query(
+            "SELECT payload FROM email_suppressions WHERE tenant_id = $1 AND normalized_recipient = $2 FOR UPDATE",
+            [incomingSuppression.tenantId, incomingSuppression.normalizedRecipient]
+          );
+          const suppression = mergeEmailSuppression(existingResult.rows[0]?.payload, incomingSuppression);
+          await client.query(
+            "INSERT INTO email_suppressions " +
+              "(id, tenant_id, normalized_recipient, reason, source, provider_event_id, payload, created_at, updated_at) " +
+              "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (tenant_id, normalized_recipient) DO UPDATE SET " +
+              "reason = EXCLUDED.reason, source = EXCLUDED.source, provider_event_id = EXCLUDED.provider_event_id, " +
+              "payload = EXCLUDED.payload, updated_at = EXCLUDED.updated_at",
+            [suppression.id, suppression.tenantId, suppression.normalizedRecipient, suppression.reason,
+              suppression.source, suppression.providerEventId, suppression, suppression.createdAt, suppression.updatedAt]
+          );
+        }
+        const previous = await client.query(
+          "SELECT payload FROM audit_events WHERE tenant_id = $1 ORDER BY seq DESC LIMIT 1",
+          [delivery.tenantId]
+        );
+        const evidence = auditEventFactory
+          ? auditEventFactory(updated, previous.rows[0]?.payload?.eventHash ?? null)
+          : auditEvent;
+        await updateEmailDelivery(client, updated);
+        await client.query(
+          "INSERT INTO email_webhook_events (id, tenant_id, provider, provider_message_id, event_type, occurred_at, payload) " +
+            "VALUES ($1,$2,'resend',$3,$4,$5,$6)",
+          [webhookId, updated.tenantId, event.data.email_id, event.type, event.created_at, event]
+        );
+        if (evidence) await insertAuditEvent(client, evidence);
+        return { duplicate: false, delivery: updated };
+      });
+    },
+    async recordServiceHeartbeat(heartbeat) {
+      await query(
+        "INSERT INTO service_heartbeats (service_name, instance_id, status, last_seen_at, details) VALUES ($1,$2,$3,$4,$5) " +
+          "ON CONFLICT (service_name, instance_id) DO UPDATE SET status = EXCLUDED.status, " +
+          "last_seen_at = EXCLUDED.last_seen_at, details = EXCLUDED.details",
+        [heartbeat.serviceName, heartbeat.instanceId, heartbeat.status, heartbeat.lastSeenAt, heartbeat.details ?? {}]
+      );
+      return heartbeat;
+    },
+    async checkEmailDeliveryReadiness({
+      now = Date.now(), staleAfterMs = 15 * 60_000, maxFailed = 0, requireHealthy = false
+    } = {}) {
+      const staleBefore = new Date(Number(now) - staleAfterMs);
+      const result = await query(
+        "SELECT status, count(*)::int AS count, " +
+          "count(*) FILTER (WHERE status IN ('queued','sending','delayed','failed') AND updated_at <= $1)::int AS stale " +
+          "FROM email_deliveries GROUP BY status",
+        [staleBefore]
+      );
+      const counts = Object.fromEntries([
+        "queued", "sending", "accepted", "delivered", "delayed", "failed", "bounced", "complained", "suppressed"
+      ].map((status) => [status, 0]));
+      let stale = 0;
+      for (const row of result.rows) {
+        if (!(row.status in counts)) throw new Error(`Unknown email delivery status: ${row.status}`);
+        counts[row.status] = row.count;
+        stale += row.stale;
+      }
+      const failures = counts.failed + counts.bounced + counts.complained;
+      const health = {
+        ready: stale === 0 && failures <= maxFailed,
+        counts,
+        failures,
+        stale,
+        backlog: counts.queued + counts.sending + counts.delayed + counts.failed
+      };
+      if (requireHealthy && !health.ready) {
+        const error = new Error("Email delivery health exceeded configured thresholds.");
+        error.code = "email_delivery_unhealthy";
+        error.health = health;
+        throw error;
+      }
+      return health;
+    },
+    async checkWorkerReadiness({ now = Date.now(), staleAfterMs = 120_000, requireHealthy = false } = {}) {
+      const result = await query(
+        "SELECT service_name, instance_id, status, last_seen_at, details FROM service_heartbeats " +
+          "WHERE service_name = 'worker' ORDER BY last_seen_at DESC"
+      );
+      return summarizeWorkerHeartbeat(result.rows.map((row) => ({
+        serviceName: row.service_name,
+        instanceId: row.instance_id,
+        status: row.status,
+        lastSeenAt: new Date(row.last_seen_at).toISOString(),
+        details: row.details
+      })), { now, staleAfterMs, requireHealthy });
     },
     async listFileRecordsByTenant(tenantId) {
       return payloads(await query(

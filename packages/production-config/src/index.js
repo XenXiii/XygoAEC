@@ -22,6 +22,14 @@ export const WORKER_NUMERIC_LIMITS = Object.freeze({
   XYGO_WORKER_SHUTDOWN_TIMEOUT_MS: { minimum: 1_000, maximum: 120_000 },
   XYGO_WORKER_MAX_DEAD_JOBS: { minimum: 0, maximum: 100_000 }
 });
+export const MONITORING_NUMERIC_LIMITS = Object.freeze({
+  XYGO_ALERT_OUTBOX_BACKLOG_MAX: { minimum: 0, maximum: 1_000_000 },
+  XYGO_ALERT_OUTBOX_OLDEST_PENDING_SEC: { minimum: 1, maximum: 86_400 },
+  XYGO_ALERT_EMAIL_FAILED_MAX: { minimum: 0, maximum: 100_000 },
+  XYGO_ALERT_EMAIL_STALE_SEC: { minimum: 60, maximum: 604_800 },
+  XYGO_ALERT_DATABASE_LATENCY_MS: { minimum: 50, maximum: 30_000 },
+  XYGO_ALERT_WORKER_HEARTBEAT_SEC: { minimum: 5, maximum: 3_600 }
+});
 export const POSTGRES_POOL_ENVIRONMENT = Object.freeze({
   XYGO_PG_POOL_MAX: { option: "max", defaultValue: 10, minimum: 1, maximum: 50 },
   XYGO_PG_IDLE_TIMEOUT_MS: {
@@ -59,12 +67,27 @@ export const PUBLIC_WEB_RUNTIME_ENV_VARS = Object.freeze([
 export const PRIVATE_PRODUCTION_ENV_VARS = Object.freeze([
   "XYGO_API_PG_URL",
   "XYGO_AUDIT_SIGNING_KEY",
-  "XYGO_SMTP_USERNAME",
-  "XYGO_SMTP_PASSWORD",
+  "XYGO_EMAIL_RESEND_API_KEY",
+  "XYGO_EMAIL_WEBHOOK_SECRET",
   "XYGO_STORAGE_ACCESS_KEY_ID",
   "XYGO_STORAGE_SECRET_ACCESS_KEY",
   "XYGO_MONITORING_AUTH_TOKEN",
   "XYGO_OIDC_BINDING_ADMIN_TOKEN"
+]);
+
+export const SERVER_ONLY_EMAIL_MONITORING_ENV_VARS = Object.freeze([
+  "XYGO_EMAIL_TRANSPORT",
+  "XYGO_EMAIL_FROM",
+  "XYGO_EMAIL_REPLY_TO",
+  "XYGO_EMAIL_RESEND_API_URL",
+  "XYGO_EMAIL_RESEND_API_KEY",
+  "XYGO_EMAIL_WEBHOOK_SECRET",
+  "XYGO_EMAIL_REQUEST_TIMEOUT_MS",
+  "XYGO_EMAIL_SINK_PATH",
+  "XYGO_MONITORING_ENABLED",
+  "XYGO_MONITORING_OTLP_ENDPOINT",
+  "XYGO_MONITORING_AUTH_TOKEN",
+  ...Object.keys(MONITORING_NUMERIC_LIMITS)
 ]);
 
 export const SERVER_ONLY_STORAGE_ENV_VARS = Object.freeze([
@@ -108,10 +131,11 @@ const API_REQUIRED_ENV_VARS = Object.freeze([
   "XYGO_WEB_API_BASE_URL",
   "XYGO_EMAIL_TRANSPORT",
   "XYGO_EMAIL_FROM",
-  "XYGO_SMTP_HOST",
-  "XYGO_SMTP_PORT",
-  "XYGO_SMTP_USERNAME",
-  "XYGO_SMTP_PASSWORD",
+  "XYGO_EMAIL_REPLY_TO",
+  "XYGO_EMAIL_RESEND_API_URL",
+  "XYGO_EMAIL_RESEND_API_KEY",
+  "XYGO_EMAIL_WEBHOOK_SECRET",
+  "XYGO_EMAIL_REQUEST_TIMEOUT_MS",
   "XYGO_STORAGE_DRIVER",
   "XYGO_STORAGE_BUCKET",
   "XYGO_STORAGE_REGION",
@@ -126,8 +150,10 @@ const API_REQUIRED_ENV_VARS = Object.freeze([
   "XYGO_STORAGE_SIGNED_URL_TTL_SEC",
   "XYGO_STORAGE_RETENTION_DAYS",
   "XYGO_OUTBOX_BACKEND",
+  "XYGO_MONITORING_ENABLED",
   "XYGO_MONITORING_OTLP_ENDPOINT",
-  "XYGO_MONITORING_AUTH_TOKEN"
+  "XYGO_MONITORING_AUTH_TOKEN",
+  ...Object.keys(MONITORING_NUMERIC_LIMITS)
 ]);
 
 const WEB_REQUIRED_ENV_VARS = Object.freeze([
@@ -147,10 +173,11 @@ const WORKER_REQUIRED_ENV_VARS = Object.freeze([
   "XYGO_WEB_APP_URL",
   "XYGO_EMAIL_TRANSPORT",
   "XYGO_EMAIL_FROM",
-  "XYGO_SMTP_HOST",
-  "XYGO_SMTP_PORT",
-  "XYGO_SMTP_USERNAME",
-  "XYGO_SMTP_PASSWORD",
+  "XYGO_EMAIL_REPLY_TO",
+  "XYGO_EMAIL_RESEND_API_URL",
+  "XYGO_EMAIL_RESEND_API_KEY",
+  "XYGO_EMAIL_WEBHOOK_SECRET",
+  "XYGO_EMAIL_REQUEST_TIMEOUT_MS",
   "XYGO_STORAGE_DRIVER",
   "XYGO_STORAGE_BUCKET",
   "XYGO_STORAGE_REGION",
@@ -173,8 +200,10 @@ const WORKER_REQUIRED_ENV_VARS = Object.freeze([
   "XYGO_WORKER_STALE_AFTER_MS",
   "XYGO_WORKER_SHUTDOWN_TIMEOUT_MS",
   "XYGO_WORKER_MAX_DEAD_JOBS",
+  "XYGO_MONITORING_ENABLED",
   "XYGO_MONITORING_OTLP_ENDPOINT",
-  "XYGO_MONITORING_AUTH_TOKEN"
+  "XYGO_MONITORING_AUTH_TOKEN",
+  ...Object.keys(MONITORING_NUMERIC_LIMITS)
 ]);
 
 export const REQUIRED_PRODUCTION_ENV_VARS = Object.freeze({
@@ -348,12 +377,47 @@ export function workerRuntimeOptionsFromEnvironment(env = {}) {
   };
 }
 
+export function monitoringRuntimeOptionsFromEnvironment(env = {}) {
+  const defaults = {
+    XYGO_ALERT_OUTBOX_BACKLOG_MAX: 1000,
+    XYGO_ALERT_OUTBOX_OLDEST_PENDING_SEC: 900,
+    XYGO_ALERT_EMAIL_FAILED_MAX: 0,
+    XYGO_ALERT_EMAIL_STALE_SEC: 900,
+    XYGO_ALERT_DATABASE_LATENCY_MS: 2000,
+    XYGO_ALERT_WORKER_HEARTBEAT_SEC: 120
+  };
+  const values = {};
+  for (const [name, bounds] of Object.entries(MONITORING_NUMERIC_LIMITS)) {
+    const raw = normalizedString(env[name]) ?? String(defaults[name]);
+    const value = Number(raw);
+    if (!/^\d+$/.test(raw) || !Number.isSafeInteger(value) || value < bounds.minimum || value > bounds.maximum) {
+      throw new Error(`Monitoring configuration error: ${name} must be an integer between ${bounds.minimum} and ${bounds.maximum}.`);
+    }
+    values[name] = value;
+  }
+  return {
+    outboxBacklogMax: values.XYGO_ALERT_OUTBOX_BACKLOG_MAX,
+    outboxOldestPendingMs: values.XYGO_ALERT_OUTBOX_OLDEST_PENDING_SEC * 1000,
+    emailFailedMax: values.XYGO_ALERT_EMAIL_FAILED_MAX,
+    emailStaleAfterMs: values.XYGO_ALERT_EMAIL_STALE_SEC * 1000,
+    databaseLatencyMs: values.XYGO_ALERT_DATABASE_LATENCY_MS,
+    workerHeartbeatStaleMs: values.XYGO_ALERT_WORKER_HEARTBEAT_SEC * 1000
+  };
+}
+
 function requireEmail(env, service) {
-  const value = normalizedString(env.XYGO_EMAIL_FROM);
+  const mailbox = normalizedString(env.XYGO_EMAIL_FROM);
+  const bracketed = mailbox?.match(/^.{1,200}\s<([^<>]+)>$/);
+  const value = bracketed?.[1] ?? mailbox;
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value ?? "")) {
     fail(service, "XYGO_EMAIL_FROM must be a valid email address.");
   }
   requireProductionHostname(value.slice(value.lastIndexOf("@") + 1), "XYGO_EMAIL_FROM", service);
+  const replyTo = normalizedString(env.XYGO_EMAIL_REPLY_TO);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(replyTo ?? "")) {
+    fail(service, "XYGO_EMAIL_REPLY_TO must be a valid email address.");
+  }
+  requireProductionHostname(replyTo.slice(replyTo.lastIndexOf("@") + 1), "XYGO_EMAIL_REPLY_TO", service);
 }
 
 function requireHostValue(env, name, service) {
@@ -383,7 +447,9 @@ function assertProductionBaseline(env, names, service) {
   requireValues(env, names, service);
   requireExact(env, "NODE_ENV", PRODUCTION, service);
   requireExact(env, "STAGED_MODE", "false", service);
-  requireExact(env, "XYGO_DEPLOY_ENVIRONMENT", PRODUCTION, service);
+  if (!["staging", PRODUCTION].includes(normalizedString(env.XYGO_DEPLOY_ENVIRONMENT))) {
+    fail(service, "XYGO_DEPLOY_ENVIRONMENT must be staging or production.");
+  }
   return true;
 }
 
@@ -393,11 +459,18 @@ function assertBackendServices(env, service) {
     requireInteger(env, name, service, bounds);
   }
   requireSecret(env, "XYGO_AUDIT_SIGNING_KEY", service);
-  requireExact(env, "XYGO_EMAIL_TRANSPORT", "smtp", service);
+  requireExact(env, "XYGO_EMAIL_TRANSPORT", "resend", service);
   requireEmail(env, service);
-  requireHostValue(env, "XYGO_SMTP_HOST", service);
-  requireInteger(env, "XYGO_SMTP_PORT", service, { maximum: 65_535 });
-  requireSecret(env, "XYGO_SMTP_PASSWORD", service, 16);
+  requireExact(env, "XYGO_EMAIL_RESEND_API_URL", "https://api.resend.com", service);
+  requireSecret(env, "XYGO_EMAIL_RESEND_API_KEY", service, 16);
+  requireSecret(env, "XYGO_EMAIL_WEBHOOK_SECRET", service, 24);
+  if (!/^re_[A-Za-z0-9_-]{12,}$/.test(normalizedString(env.XYGO_EMAIL_RESEND_API_KEY))) {
+    fail(service, "XYGO_EMAIL_RESEND_API_KEY must use the Resend re_ key format.");
+  }
+  if (!/^whsec_[A-Za-z0-9+/=_-]{16,}$/.test(normalizedString(env.XYGO_EMAIL_WEBHOOK_SECRET))) {
+    fail(service, "XYGO_EMAIL_WEBHOOK_SECRET must use the signed-webhook whsec_ format.");
+  }
+  requireInteger(env, "XYGO_EMAIL_REQUEST_TIMEOUT_MS", service, { minimum: 1_000, maximum: 30_000 });
   requireExact(env, "XYGO_STORAGE_DRIVER", "s3", service);
   try {
     storageConfigurationFromEnvironment(env);
@@ -405,8 +478,12 @@ function assertBackendServices(env, service) {
     fail(service, error.message);
   }
   requireExact(env, "XYGO_OUTBOX_BACKEND", "postgres", service);
+  requireExact(env, "XYGO_MONITORING_ENABLED", "true", service);
   requireHttpsUrl(env, "XYGO_MONITORING_OTLP_ENDPOINT", service);
   requireSecret(env, "XYGO_MONITORING_AUTH_TOKEN", service, 16);
+  for (const [name, bounds] of Object.entries(MONITORING_NUMERIC_LIMITS)) {
+    requireInteger(env, name, service, bounds);
+  }
 }
 
 export function isProductionEnvironment(env = process.env) {

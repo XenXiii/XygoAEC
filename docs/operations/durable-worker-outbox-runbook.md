@@ -5,10 +5,10 @@ This runbook defines the staging/production contract for Xygo background-job dur
 audit evidence, and its outbox event in one PostgreSQL transaction for the collection create flows
 field-report draft/review transitions, and file upload/delete finalization paths wired by this slice.
 
-This work does not provision PostgreSQL, deploy a worker, install live credentials, send email,
-configure a monitoring provider, process malware, or perform external delivery. The current handler
-records internal domain-event delivery only. Provider integrations require separate approval and
-must preserve the outbox idempotency key.
+This work does not provision PostgreSQL, deploy a worker, install live credentials, send live email,
+configure a monitoring provider, process malware, or perform unrelated external delivery. Email
+delivery is now handled by the durable worker through the local sink or configured Resend adapter; see
+`email-monitoring-runbook.md`. Other event types retain the structured-log handler.
 
 ## Runtime model and invariants
 
@@ -90,7 +90,8 @@ an emergency SQL repair is approved.
 - A timeout exits non-zero. The remaining `processing` claim is not silently marked successful; it is
   reclaimed after the stale threshold and must rely on the idempotency contract.
 - Repeated tick/database errors, growing backlog, stale claims, any dead job above policy, or shutdown
-  timeouts block staging approval. Monitoring-provider alert wiring is a later slice; until then the
+  timeouts block staging approval. External monitoring-provider alert wiring remains a deployment
+  task; until it is configured, the
   deployment owner must run the readiness and tenant inspection commands during smoke tests/incidents.
 
 ## Staging smoke test

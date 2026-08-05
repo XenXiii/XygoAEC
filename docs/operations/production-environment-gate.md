@@ -11,11 +11,11 @@ those values; replace them with reviewed deployment values. Do not copy secrets 
 client bundles, build arguments, logs, or pull-request settings. Inject private values at runtime from
 the approved secret manager.
 
-## Required by every production process
+## Required by every deployable staging/production process
 
 - `NODE_ENV=production`
 - `STAGED_MODE=false`
-- `XYGO_DEPLOY_ENVIRONMENT=production`
+- `XYGO_DEPLOY_ENVIRONMENT=staging` or `production`; both use the same fail-closed gate
 - `XYGO_RELEASE`: immutable release identifier, normally the deployed commit SHA
 
 The process-specific lists below are exact. A deployment platform may use one environment group, but
@@ -55,12 +55,13 @@ The API requires `XYGO_WEB_APP_URL`, `XYGO_WEB_API_BASE_URL`, `XYGO_AUTH_MODE=oi
 - `XYGO_OIDC_ALLOWED_ALGORITHMS`
 - `XYGO_OIDC_CLOCK_TOLERANCE_SEC`: integer from 0 through 300
 - `XYGO_AUDIT_SIGNING_KEY`: non-placeholder secret with at least 32 characters
-- `XYGO_EMAIL_TRANSPORT=smtp`
+- `XYGO_EMAIL_TRANSPORT=resend`
 - `XYGO_EMAIL_FROM`
-- `XYGO_SMTP_HOST`
-- `XYGO_SMTP_PORT`
-- `XYGO_SMTP_USERNAME`
-- `XYGO_SMTP_PASSWORD`: non-placeholder secret with at least 16 characters
+- `XYGO_EMAIL_REPLY_TO`
+- `XYGO_EMAIL_RESEND_API_URL=https://api.resend.com`
+- `XYGO_EMAIL_RESEND_API_KEY`: private non-placeholder secret in Resend's `re_` key format
+- `XYGO_EMAIL_WEBHOOK_SECRET`: private non-placeholder signing secret in `whsec_` format
+- `XYGO_EMAIL_REQUEST_TIMEOUT_MS`: integer from 1000 through 30000
 - `XYGO_STORAGE_DRIVER=s3`
 - `XYGO_STORAGE_BUCKET`
 - `XYGO_STORAGE_REGION`
@@ -75,8 +76,15 @@ The API requires `XYGO_WEB_APP_URL`, `XYGO_WEB_API_BASE_URL`, `XYGO_AUTH_MODE=oi
 - `XYGO_STORAGE_SIGNED_URL_TTL_SEC`: integer from 60 through 900
 - `XYGO_STORAGE_RETENTION_DAYS`: integer from 1 through 3650
 - `XYGO_OUTBOX_BACKEND=postgres`
+- `XYGO_MONITORING_ENABLED=true`
 - `XYGO_MONITORING_OTLP_ENDPOINT`: HTTPS server-side telemetry endpoint
 - `XYGO_MONITORING_AUTH_TOKEN`: non-placeholder secret with at least 16 characters
+- `XYGO_ALERT_OUTBOX_BACKLOG_MAX`: integer from 0 through 1000000
+- `XYGO_ALERT_OUTBOX_OLDEST_PENDING_SEC`: integer from 1 through 86400
+- `XYGO_ALERT_EMAIL_FAILED_MAX`: integer from 0 through 100000
+- `XYGO_ALERT_EMAIL_STALE_SEC`: integer from 60 through 604800
+- `XYGO_ALERT_DATABASE_LATENCY_MS`: integer from 50 through 30000
+- `XYGO_ALERT_WORKER_HEARTBEAT_SEC`: integer from 5 through 3600
 
 ## Worker: server-only values
 
@@ -95,10 +103,12 @@ outbox, and server-side monitoring values above. It additionally requires:
 The tenant file-storage slice implements this private S3-compatible configuration, signed access,
 PostgreSQL metadata, and local development storage. The bucket, credentials, provider controls,
 malware/quarantine workflow, and restore drill are not provisioned by config validation. The durable
-PostgreSQL outbox and worker lifecycle are implemented, but no external delivery or monitoring provider
-is configured. See the [Durable Worker and Outbox Operations Runbook](durable-worker-outbox-runbook.md).
+PostgreSQL outbox, worker lifecycle, Resend delivery adapter, local email sink, signed webhook path,
+and dependency readiness surfaces are implemented, but no live email or monitoring account is
+configured. See the [Durable Worker and Outbox Operations Runbook](durable-worker-outbox-runbook.md)
+and [Email Delivery and Monitoring Operations Runbook](email-monitoring-runbook.md).
 
-Production URLs, PostgreSQL URLs, SMTP hosts, and email domains reject IANA-reserved example, test,
+Production URLs, PostgreSQL URLs, and email domains reject IANA-reserved example, test,
 and invalid names, local or loopback names, and obvious placeholder labels. This prevents the example
 manifest from becoming bootable after only its secret placeholders are replaced.
 
@@ -109,7 +119,7 @@ performs a read-only database/schema preflight before listening.
 
 ## Private values and rotation
 
-The database URL, audit signing key, SMTP username/password, storage access key/secret, server-side
+The database URL, audit signing key, Resend API/webhook keys, storage access key/secret, server-side
 monitoring token, and any future managed-IdP binding administration token are private. They are
 explicitly disjoint from the public web allowlist and are covered by a regression test that places a
 unique sentinel in every private variable and proves none appears in `/runtime-config.json`.
@@ -120,7 +130,7 @@ approved; that procedure is not implemented in this slice.
 
 ## What this gate does not do
 
-This change does not configure a live IdP, SMTP account, object-store service, telemetry backend, managed
-Postgres database, worker process, or provider integration. It does not deploy or execute the documented backup, restore,
+This gate does not configure a live IdP, email account/domain, object-store service, telemetry backend,
+managed Postgres database, or worker process. It does not deploy or execute the documented backup, restore,
 rollback, or migration procedures against a managed service. Live service configuration,
 secret-manager bindings, a successful restore drill, and staging smoke tests remain release blockers.
