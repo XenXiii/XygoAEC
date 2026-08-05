@@ -1,0 +1,6 @@
+{
+  "name": "@xygo/staging-readiness",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module"
+}

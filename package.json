@@ -17,6 +17,8 @@
     "migrate:postgres": "node scripts/migrate-postgres.mjs",
     "check:postgres": "node scripts/check-postgres-readiness.mjs",
     "check:outbox": "node scripts/check-outbox-readiness.mjs",
+    "check:staging": "node scripts/check-staging-deployment.mjs",
+    "smoke:staging": "node scripts/smoke-staging.mjs",
     "outbox:inspect": "node scripts/inspect-outbox.mjs",
     "outbox:replay": "node scripts/replay-outbox-job.mjs",
     "test": "XYGO_API_REPOSITORY_MODE=memory node --test packages/*/test/**/*.test.js apps/*/test/**/*.test.js",
