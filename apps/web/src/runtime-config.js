@@ -80,6 +80,9 @@ export function loadWebRuntimeConfig(env = process.env) {
     };
     config.session = {
       secret: normalizedString(env.XYGO_WEB_SESSION_SECRET),
+      encryptionSecret: normalizedString(env.XYGO_WEB_SESSION_ENCRYPTION_KEY),
+      storeBackend: normalizedString(env.XYGO_WEB_SESSION_STORE) ?? "memory",
+      postgresUrl: normalizedString(env.XYGO_WEB_SESSION_PG_URL) ?? normalizedString(env.XYGO_API_PG_URL),
       cookieName: normalizedString(env.XYGO_WEB_SESSION_COOKIE_NAME) ?? "__Host-xygo-session",
       allowedOrigin: normalizedString(env.XYGO_WEB_ALLOWED_ORIGIN) ?? new URL(appUrl).origin,
       idleTtlMs: integerSetting(env.XYGO_WEB_SESSION_IDLE_SEC, 1800, 300, 86_400, "XYGO_WEB_SESSION_IDLE_SEC") * 1000,
@@ -139,6 +142,9 @@ export function assertWebRuntimeConfig(config, env = process.env) {
       assertHttpsUrl(value, label, { allowQuery });
     }
     if (!config.session.secret || config.session.secret.length < 32) throw new Error("XYGO_WEB_SESSION_SECRET must contain at least 32 characters.");
+    if (config.session.storeBackend !== "postgres") throw new Error("XYGO_WEB_SESSION_STORE must be postgres in production mode.");
+    if (!config.session.postgresUrl) throw new Error("XYGO_WEB_SESSION_PG_URL or XYGO_API_PG_URL is required for the production session store.");
+    if (!config.session.encryptionSecret || config.session.encryptionSecret.length < 32) throw new Error("XYGO_WEB_SESSION_ENCRYPTION_KEY must contain at least 32 characters.");
     if (!config.session.cookieName.startsWith("__Host-") || config.session.cookieName.includes("=")) {
       throw new Error("XYGO_WEB_SESSION_COOKIE_NAME must use the __Host- prefix.");
     }

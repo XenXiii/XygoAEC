@@ -27,6 +27,9 @@ const productionEnv = {
   XYGO_WEB_OIDC_END_SESSION_ENDPOINT: "https://idp.production.xygoaec.com/logout",
   XYGO_WEB_OIDC_SCOPES: "openid profile email",
   XYGO_WEB_SESSION_SECRET: "web-session-signing-secret-at-least-32-characters",
+  XYGO_WEB_SESSION_ENCRYPTION_KEY: "web-session-encryption-secret-at-least-32-characters",
+  XYGO_WEB_SESSION_STORE: "postgres",
+  XYGO_WEB_SESSION_PG_URL: "postgresql://xygo:password@db.production.xygoaec.com/xygo?sslmode=verify-full",
   XYGO_WEB_SESSION_COOKIE_NAME: "__Host-xygo-session",
   XYGO_WEB_SESSION_COOKIE_SECURE: "true",
   XYGO_WEB_SESSION_COOKIE_HTTP_ONLY: "true",
@@ -81,6 +84,8 @@ test("public runtime config fixes browser auth to code plus PKCE and memory toke
   assert.ok(publicConfig.auth.scopes.includes("openid"));
   assert.equal("clientSecret" in publicConfig.auth, false);
   assert.equal("internalSecret" in publicConfig.auth, false);
+  assert.equal(JSON.stringify(publicConfig).includes(productionEnv.XYGO_WEB_SESSION_ENCRYPTION_KEY), false);
+  assert.equal(JSON.stringify(publicConfig).includes(productionEnv.XYGO_WEB_SESSION_PG_URL), false);
 });
 
 test("web server exposes only the non-secret managed IdP runtime manifest", () => {
@@ -95,6 +100,9 @@ test("web server exposes only the non-secret managed IdP runtime manifest", () =
   );
   Object.assign(authValues, {
     XYGO_WEB_SESSION_SECRET: "auth-session-secret-sentinel-at-least-32-characters",
+    XYGO_WEB_SESSION_ENCRYPTION_KEY: "auth-session-encryption-sentinel-at-least-32-characters",
+    XYGO_WEB_SESSION_STORE: "postgres",
+    XYGO_WEB_SESSION_PG_URL: "postgresql://xygo:password@db.production.xygoaec.com/xygo?sslmode=verify-full",
     XYGO_WEB_SESSION_COOKIE_NAME: "__Host-xygo-session",
     XYGO_WEB_SESSION_COOKIE_SECURE: "true",
     XYGO_WEB_SESSION_COOKIE_HTTP_ONLY: "true",
@@ -147,4 +155,8 @@ test("authenticated application surfaces use the shared bearer-session client", 
   assert.match(authClient, /authorization: `Bearer \$\{bearer\}`/);
   assert.match(authClient, /response\.status === 401/);
   assert.doesNotMatch(authClient, /localStorage|sessionStorage/);
+  assert.doesNotMatch(authClient, /searchParams\.set\(["']access_token/);
+  assert.match(authClient, /\/auth\/events\/stream\?tenantId=/);
+  const server = fs.readFileSync(new URL("../src/server.js", import.meta.url), "utf8");
+  assert.match(server, /authorization: `Bearer \$\{token\}`/);
 });

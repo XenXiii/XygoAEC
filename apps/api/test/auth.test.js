@@ -13,7 +13,7 @@ import { POSTGRES_MIGRATIONS } from "../src/repositories/postgres-migrations.js"
 test("ordered Postgres migrations include authorization, storage, outbox, email monitoring, and suppression", () => {
   assert.deepEqual(
     POSTGRES_MIGRATIONS.map(({ version }) => version),
-    ["0001_init", "0002_paid_client_provisioning", "0003_oidc_authorization", "0004_tenant_file_storage", "0005_durable_outbox", "0006_email_monitoring", "0007_email_suppressions"]
+    ["0001_init", "0002_paid_client_provisioning", "0003_oidc_authorization", "0004_tenant_file_storage", "0005_durable_outbox", "0006_email_monitoring", "0007_email_suppressions", "0008_web_auth_sessions"]
   );
 });
 
@@ -255,7 +255,7 @@ test("resolveOidcPrincipal requires a bearer token", async () => {
   );
 });
 
-test("query-string identity is restricted to the SSE auth path", async () => {
+test("OIDC bearer tokens are rejected from query strings, including SSE", async () => {
   const searchParams = new URLSearchParams({ access_token: signJwt(baseClaims()) });
   const input = {
     searchParams,
@@ -266,8 +266,7 @@ test("query-string identity is restricted to the SSE auth path", async () => {
   };
 
   await assert.rejects(() => resolvePrincipal(input), (e) => e.code === "missing_token");
-  const principal = await resolvePrincipal({ ...input, allowQueryAuth: true });
-  assert.equal(principal.tenantId, "tenant-canonical");
+  await assert.rejects(() => resolvePrincipal({ ...input, allowQueryAuth: true }), (e) => e.code === "missing_token");
 
   const stagedWithoutSse = await resolvePrincipal({
     config: { mode: "staged" },

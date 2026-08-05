@@ -28,14 +28,10 @@ export function resolveStagedPrincipal({ headers = {}, searchParams = null } = {
   };
 }
 
-function extractBearer(headers = {}, searchParams = null, allowQueryAuth = false) {
+function extractBearer(headers = {}) {
   const header = headers.authorization ?? headers.Authorization ?? null;
   if (header && /^Bearer\s+/i.test(header)) {
     return header.replace(/^Bearer\s+/i, "").trim();
-  }
-  // EventSource cannot set headers; allow the token via query for the SSE stream.
-  if (allowQueryAuth && searchParams) {
-    return searchParams.get("access_token");
   }
   return null;
 }
@@ -52,7 +48,7 @@ export async function resolveOidcPrincipal({
   allowQueryAuth = false,
   now = Date.now()
 }) {
-  const token = extractBearer(headers, searchParams, allowQueryAuth);
+  const token = extractBearer(headers);
   if (!token) {
     throw new AuthError("missing_token", "Authorization bearer token is required.");
   }

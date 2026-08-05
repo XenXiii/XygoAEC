@@ -99,7 +99,8 @@ test("postgres schema contains every canonical provisioning table", { skip }, as
     "schema_migrations",
     "service_heartbeats",
     "tenants",
-    "users"
+    "users",
+    "web_auth_sessions"
   ];
   const result = await pool.query(
     "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ANY($1::text[]) ORDER BY table_name",
@@ -115,7 +116,8 @@ test("postgres schema contains every canonical provisioning table", { skip }, as
     "0004_tenant_file_storage",
     "0005_durable_outbox",
     "0006_email_monitoring",
-    "0007_email_suppressions"
+    "0007_email_suppressions",
+    "0008_web_auth_sessions"
   ]);
 });
 
@@ -133,7 +135,8 @@ test("postgres readiness verifies connectivity and the complete migration chain"
     "0004_tenant_file_storage",
     "0005_durable_outbox",
     "0006_email_monitoring",
-    "0007_email_suppressions"
+    "0007_email_suppressions",
+    "0008_web_auth_sessions"
   ]);
 });
 

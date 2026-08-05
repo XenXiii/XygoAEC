@@ -227,6 +227,9 @@ test("worker and OIDC clock numeric bounds reject unsafe extremes", () => {
 test("web login session, callback origin, cookie, and token tolerance settings fail closed", () => {
   for (const [name, value] of [
     ["XYGO_WEB_SESSION_SECRET", "weak"],
+    ["XYGO_WEB_SESSION_ENCRYPTION_KEY", "weak"],
+    ["XYGO_WEB_SESSION_STORE", "memory"],
+    ["XYGO_WEB_SESSION_PG_URL", "postgresql://xygo:password@db.production.xygoaec.com/xygo"],
     ["XYGO_WEB_SESSION_COOKIE_NAME", "xygo-session"],
     ["XYGO_WEB_SESSION_COOKIE_SECURE", "false"],
     ["XYGO_WEB_SESSION_COOKIE_HTTP_ONLY", "false"],

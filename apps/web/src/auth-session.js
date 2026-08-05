@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { createConfiguredSessionStore } from "./session-store.js";
 
 function base64url(bytes) {
   return Buffer.from(bytes).toString("base64url");
@@ -59,24 +60,17 @@ function tokenExpiry(payload, now, clockToleranceSec = 0) {
 export function createWebAuthSessionManager(config, {
   fetchImpl = fetch,
   now = () => Date.now(),
-  randomBytes = crypto.randomBytes
+  randomBytes = crypto.randomBytes,
+  sessionStore
 } = {}) {
-  const transactions = new Map();
-  const sessions = new Map();
+  const store = createConfiguredSessionStore(config, { sessionStore, now });
   const authCookie = "__Host-xygo-auth";
   const sessionCookie = config.session.cookieName;
 
-  function prune(current = now()) {
-    for (const [id, transaction] of transactions) if (transaction.expiresAt <= current) transactions.delete(id);
-    for (const [id, session] of sessions) {
-      if (session.absoluteExpiresAt <= current || session.idleExpiresAt <= current) sessions.delete(id);
-    }
-  }
-
-  function readSession(headers) {
-    prune();
+  async function readSession(headers) {
     const id = verifySigned(cookieValue(headers, sessionCookie), config.session.secret);
-    return id ? sessions.get(id) ?? null : null;
+    const session = id ? await store.get(id) : null;
+    return session?.kind === "user_session" ? { id, ...session } : null;
   }
 
   async function exchange(parameters) {
@@ -92,15 +86,16 @@ export function createWebAuthSessionManager(config, {
   }
 
   return {
-    beginLogin(returnTo = "/control-room") {
-      prune();
+    async beginLogin(returnTo = "/control-room") {
+      await store.cleanup();
       if (!/^\/[A-Za-z0-9/_-]*$/.test(returnTo) || returnTo.startsWith("//")) returnTo = "/control-room";
       const id = base64url(randomBytes(24));
       const state = base64url(randomBytes(32));
       const nonce = base64url(randomBytes(32));
       const verifier = base64url(randomBytes(48));
       const challenge = base64url(crypto.createHash("sha256").update(verifier).digest());
-      transactions.set(id, { state, nonce, verifier, returnTo, expiresAt: now() + config.session.transactionTtlMs });
+      const expiresAt = now() + config.session.transactionTtlMs;
+      await store.set(id, { kind: "login_transaction", state, nonce, verifier, returnTo, idleExpiresAt: expiresAt, absoluteExpiresAt: expiresAt });
       const target = new URL(config.auth.authorizationEndpoint);
       target.searchParams.set("client_id", config.auth.clientId);
       target.searchParams.set("redirect_uri", config.auth.redirectUri);
@@ -117,15 +112,15 @@ export function createWebAuthSessionManager(config, {
       };
     },
     async completeCallback(url, headers = {}) {
-      prune();
       const transactionId = verifySigned(cookieValue(headers, authCookie), config.session.secret);
-      const transaction = transactionId ? transactions.get(transactionId) : null;
+      const candidate = transactionId ? await store.get(transactionId) : null;
+      const transaction = candidate?.kind === "login_transaction" ? candidate : null;
       const state = url.searchParams.get("state");
       const code = url.searchParams.get("code");
       if (!transaction || !state || state !== transaction.state || !code || url.searchParams.get("error")) {
         return { status: 400, body: { code: "invalid_oidc_callback" }, headers: { "set-cookie": clearCookie(authCookie), "cache-control": "no-store" } };
       }
-      transactions.delete(transactionId);
+      await store.delete(transactionId);
       const payload = await exchange({
         grant_type: "authorization_code",
         client_id: config.auth.clientId,
@@ -136,7 +131,8 @@ export function createWebAuthSessionManager(config, {
       if (config.session.requireRefreshToken && !payload.refresh_token) throw new Error("OIDC token response must contain a refresh token.");
       const current = now();
       const id = base64url(randomBytes(32));
-      sessions.set(id, {
+      await store.set(id, {
+        kind: "user_session",
         accessToken: required(payload.access_token, "OIDC access token"),
         refreshToken: payload.refresh_token ?? null,
         accessTokenExpiresAt: tokenExpiry(payload, current, config.session.tokenClockToleranceSec),
@@ -153,15 +149,16 @@ export function createWebAuthSessionManager(config, {
         }
       };
     },
-    session(headers = {}) {
-      const session = readSession(headers);
+    async session(headers = {}) {
+      const session = await readSession(headers);
       if (!session) return { status: 401, body: { authenticated: false } };
       const current = now();
       session.idleExpiresAt = Math.min(current + config.session.idleTtlMs, session.absoluteExpiresAt);
+      await store.set(session.id, session);
       return { status: 200, body: { authenticated: true, accessToken: session.accessToken, expiresAt: new Date(session.accessTokenExpiresAt).toISOString() } };
     },
     async renew(headers = {}) {
-      const session = readSession(headers);
+      const session = await readSession(headers);
       if (!session?.refreshToken) return { status: 401, body: { authenticated: false, code: "session_not_renewable" } };
       const payload = await exchange({
         grant_type: "refresh_token",
@@ -173,11 +170,12 @@ export function createWebAuthSessionManager(config, {
       session.refreshToken = payload.refresh_token ?? session.refreshToken;
       session.accessTokenExpiresAt = tokenExpiry(payload, current, config.session.tokenClockToleranceSec);
       session.idleExpiresAt = Math.min(current + config.session.idleTtlMs, session.absoluteExpiresAt);
+      await store.set(session.id, session);
       return { status: 200, body: { authenticated: true, accessToken: session.accessToken, expiresAt: new Date(session.accessTokenExpiresAt).toISOString() } };
     },
-    logout(headers = {}) {
+    async logout(headers = {}) {
       const id = verifySigned(cookieValue(headers, sessionCookie), config.session.secret);
-      if (id) sessions.delete(id);
+      if (id) await store.delete(id);
       const target = new URL(config.auth.endSessionEndpoint);
       target.searchParams.set("client_id", config.auth.clientId);
       target.searchParams.set("post_logout_redirect_uri", config.auth.postLogoutRedirectUri);
@@ -185,6 +183,13 @@ export function createWebAuthSessionManager(config, {
     },
     checkOrigin(headers = {}) {
       return headers.origin === config.session.allowedOrigin;
+    },
+    async accessToken(headers = {}) {
+      const session = await readSession(headers);
+      return session?.accessToken ?? null;
+    },
+    cleanup() {
+      return store.cleanup();
     }
   };
 }

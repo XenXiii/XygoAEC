@@ -63,9 +63,10 @@ export async function authenticatedFetch(url, options = {}) {
 }
 
 export async function authenticatedEventSourceUrl(url) {
-  const token = await accessToken();
-  if (!token) return url;
+  const config = await runtimeConfig();
+  if (config.auth.mode !== "oidc") return url;
   const target = new URL(url);
-  target.searchParams.set("access_token", token);
-  return target.toString();
+  const match = target.pathname.match(/^\/v1\/tenants\/([^/]+)\/events\/stream$/);
+  if (!match) throw new Error("Authenticated event streams require a tenant event-stream URL.");
+  return `/auth/events/stream?tenantId=${encodeURIComponent(decodeURIComponent(match[1]))}`;
 }

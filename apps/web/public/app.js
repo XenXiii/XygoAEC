@@ -100,7 +100,7 @@ async function connectStream(apiBaseUrl, tenantId) {
     `${apiBaseUrl}/v1/tenants/${tenantId}/events/stream?stagedTenantId=${encodeURIComponent(tenantId)}`
   );
   const eventSource = new EventSource(streamUrl, {
-    withCredentials: false
+    withCredentials: true
   });
 
   liveIndicator.textContent = "Live updates connecting";

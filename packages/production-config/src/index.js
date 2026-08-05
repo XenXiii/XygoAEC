@@ -74,11 +74,16 @@ export const PRIVATE_PRODUCTION_ENV_VARS = Object.freeze([
   "XYGO_STORAGE_SECRET_ACCESS_KEY",
   "XYGO_MONITORING_AUTH_TOKEN",
   "XYGO_OIDC_BINDING_ADMIN_TOKEN",
-  "XYGO_WEB_SESSION_SECRET"
+  "XYGO_WEB_SESSION_SECRET",
+  "XYGO_WEB_SESSION_ENCRYPTION_KEY",
+  "XYGO_WEB_SESSION_PG_URL"
 ]);
 
 export const SERVER_ONLY_WEB_AUTH_ENV_VARS = Object.freeze([
   "XYGO_WEB_SESSION_SECRET",
+  "XYGO_WEB_SESSION_ENCRYPTION_KEY",
+  "XYGO_WEB_SESSION_STORE",
+  "XYGO_WEB_SESSION_PG_URL",
   "XYGO_WEB_SESSION_COOKIE_NAME",
   "XYGO_WEB_SESSION_COOKIE_SECURE",
   "XYGO_WEB_SESSION_COOKIE_HTTP_ONLY",
@@ -304,19 +309,19 @@ function requireHttpsUrl(env, name, service, { allowQuery = false } = {}) {
   requireProductionHostname(url.hostname, name, service);
 }
 
-function requirePostgresUrl(env, service) {
+function requirePostgresUrl(env, service, name = "XYGO_API_PG_URL") {
   let url;
   try {
-    url = new URL(normalizedString(env.XYGO_API_PG_URL));
+    url = new URL(normalizedString(env[name]));
   } catch {
-    fail(service, "XYGO_API_PG_URL must be a valid PostgreSQL connection URL.");
+    fail(service, `${name} must be a valid PostgreSQL connection URL.`);
   }
   if (!new Set(["postgres:", "postgresql:"]).has(url.protocol) || !url.hostname) {
-    fail(service, "XYGO_API_PG_URL must use the postgres or postgresql scheme and name a host.");
+    fail(service, `${name} must use the postgres or postgresql scheme and name a host.`);
   }
-  requireProductionHostname(url.hostname, "XYGO_API_PG_URL", service);
+  requireProductionHostname(url.hostname, name, service);
   if (!SECURE_POSTGRES_SSL_MODES.has(url.searchParams.get("sslmode"))) {
-    fail(service, "XYGO_API_PG_URL must set sslmode=require, verify-ca, or verify-full.");
+    fail(service, `${name} must set sslmode=require, verify-ca, or verify-full.`);
   }
 }
 
@@ -536,6 +541,9 @@ export function assertProductionWebEnvironment(env = process.env) {
   requireHttpsUrl(env, "XYGO_WEB_OIDC_END_SESSION_ENDPOINT", "web", { allowQuery: true });
   requireHttpsUrl(env, "XYGO_WEB_MONITORING_ENDPOINT", "web");
   requireSecret(env, "XYGO_WEB_SESSION_SECRET", "web", 32);
+  requireSecret(env, "XYGO_WEB_SESSION_ENCRYPTION_KEY", "web", 32);
+  requireExact(env, "XYGO_WEB_SESSION_STORE", "postgres", "web");
+  requirePostgresUrl(env, "web", "XYGO_WEB_SESSION_PG_URL");
   requireExact(env, "XYGO_WEB_SESSION_COOKIE_SECURE", "true", "web");
   requireExact(env, "XYGO_WEB_SESSION_COOKIE_HTTP_ONLY", "true", "web");
   if (normalizedString(env.XYGO_WEB_SESSION_COOKIE_SAME_SITE)?.toLowerCase() !== "lax") {
