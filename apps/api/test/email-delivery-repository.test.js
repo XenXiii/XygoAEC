@@ -96,4 +96,3 @@ for (const kind of ["memory", "file", "sqlite"]) {
     assert.equal((await repo.listAuditEventsByTenant(TENANT_A)).at(-1).previousHash, tenantEvent.eventHash);
   });
 }
-

@@ -24,4 +24,3 @@ test("managed IdP binding command refuses to omit the activation application URL
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /XYGO_WEB_APP_URL is required/);
 });
-
