@@ -24,7 +24,17 @@ Use [`config/managed-idp.env.example`](../../config/managed-idp.env.example) as 
 reference fragment. A complete production environment starts from
 [`config/production.env.example`](../../config/production.env.example); real values belong in the
 approved environment or secret store. `XYGO_OIDC_PROVIDER` is descriptive but mandatory in production;
-supported values are `auth0`, `clerk`, `cognito`, `entra`, `okta`, and `other-managed-oidc`.
+supported values are `auth0`, `clerk`, `cognito`, `entra`, `google`, `okta`, and `other-managed-oidc`.
+
+For Google OAuth / Sign in with Google, set the issuer to `https://accounts.google.com`, the
+authorization endpoint to `https://accounts.google.com/o/oauth2/v2/auth`, the token endpoint to
+`https://oauth2.googleapis.com/token`, and the JWKS endpoint to
+`https://www.googleapis.com/oauth2/v3/certs`. Use the Google OAuth client ID as both
+`XYGO_WEB_OIDC_CLIENT_ID` and `XYGO_OIDC_AUDIENCE`, store `XYGO_WEB_OIDC_CLIENT_SECRET` only in the
+server-side web runtime, and omit `XYGO_WEB_OIDC_END_SESSION_ENDPOINT` because Google does not publish
+a standard OIDC end-session endpoint. The web broker stores Google's `id_token` as the server-issued
+browser session bearer so the API can verify issuer, audience, signature, and canonical Postgres
+issuer+subject binding.
 
 The API validates bearer tokens against the exact issuer, audience, explicit JWKS endpoint, and RSA
 algorithm allowlist. The provider token's tenant or role claims are never authorization inputs.

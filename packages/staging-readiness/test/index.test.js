@@ -76,6 +76,9 @@ test("staging preflight detects unsafe release cache rules and missing migration
   const unsafe = structuredClone(vercelConfig);
   unsafe.headers.find(({ source }) => source === "/runtime-config.json").headers[0].value = "public, max-age=3600";
   assert.throws(() => preflight(stagingEnvironment(), { vercelConfig: unsafe }), /runtime config must be private/i);
+  const staticOnly = structuredClone(vercelConfig);
+  delete staticOnly.rewrites;
+  assert.throws(() => preflight(stagingEnvironment(), { vercelConfig: staticOnly }), /dynamic web runtime/i);
   assert.throws(() => preflight(stagingEnvironment(), { migrationVersions: migrationVersions.filter((value) => value !== "0008_web_auth_sessions") }), /migration is missing/i);
   assert.throws(() => preflight(stagingEnvironment(), { serviceWorkerSource: serviceWorkerSource.replace('"/auth/", ', "") }), /cache boundary/i);
 });

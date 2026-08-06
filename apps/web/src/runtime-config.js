@@ -3,9 +3,12 @@ const MANAGED_OIDC_PROVIDERS = new Set([
   "clerk",
   "cognito",
   "entra",
+  "google",
   "okta",
   "other-managed-oidc"
 ]);
+
+const PROVIDERS_REQUIRING_TOKEN_CLIENT_SECRET = new Set(["google"]);
 
 function normalizedString(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -68,6 +71,7 @@ export function loadWebRuntimeConfig(env = process.env) {
       issuer: normalizedString(env.XYGO_OIDC_ISSUER),
       audience: normalizedString(env.XYGO_OIDC_AUDIENCE),
       clientId: normalizedString(env.XYGO_WEB_OIDC_CLIENT_ID),
+      clientSecret: normalizedString(env.XYGO_WEB_OIDC_CLIENT_SECRET),
       authorizationEndpoint: normalizedString(env.XYGO_WEB_OIDC_AUTHORIZATION_ENDPOINT),
       tokenEndpoint: normalizedString(env.XYGO_WEB_OIDC_TOKEN_ENDPOINT),
       endSessionEndpoint: normalizedString(env.XYGO_WEB_OIDC_END_SESSION_ENDPOINT),
@@ -99,9 +103,6 @@ export function loadWebRuntimeConfig(env = process.env) {
 }
 
 export function assertWebRuntimeConfig(config, env = process.env) {
-  if (normalizedString(env.XYGO_WEB_OIDC_CLIENT_SECRET)) {
-    throw new Error("XYGO_WEB_OIDC_CLIENT_SECRET is forbidden: the browser must use Authorization Code + PKCE as a public client.");
-  }
   if (config.productionMode && config.auth.mode !== "oidc") {
     throw new Error("Production web runtime requires XYGO_AUTH_MODE=oidc; staged headers are not a production sign-in method.");
   }
@@ -116,9 +117,9 @@ export function assertWebRuntimeConfig(config, env = process.env) {
     [config.auth.audience, "XYGO_OIDC_AUDIENCE"],
     [config.auth.clientId, "XYGO_WEB_OIDC_CLIENT_ID"],
     [config.auth.authorizationEndpoint, "XYGO_WEB_OIDC_AUTHORIZATION_ENDPOINT"],
-    [config.auth.tokenEndpoint, "XYGO_WEB_OIDC_TOKEN_ENDPOINT"],
-    [config.auth.endSessionEndpoint, "XYGO_WEB_OIDC_END_SESSION_ENDPOINT"]
+    [config.auth.tokenEndpoint, "XYGO_WEB_OIDC_TOKEN_ENDPOINT"]
   ];
+  if (config.auth.provider !== "google") required.push([config.auth.endSessionEndpoint, "XYGO_WEB_OIDC_END_SESSION_ENDPOINT"]);
   const missing = required.filter(([value]) => !value).map(([, label]) => label);
   if (missing.length > 0) {
     throw new Error(`OIDC web runtime is missing required settings: ${missing.join(", ")}.`);
@@ -129,6 +130,12 @@ export function assertWebRuntimeConfig(config, env = process.env) {
   if (!config.auth.scopes.includes("openid")) {
     throw new Error("XYGO_WEB_OIDC_SCOPES must include openid.");
   }
+  if (PROVIDERS_REQUIRING_TOKEN_CLIENT_SECRET.has(config.auth.provider) && !config.auth.clientSecret) {
+    throw new Error(`XYGO_WEB_OIDC_CLIENT_SECRET is required for ${config.auth.provider} token exchange and must remain server-only.`);
+  }
+  if (!PROVIDERS_REQUIRING_TOKEN_CLIENT_SECRET.has(config.auth.provider) && config.auth.clientSecret) {
+    throw new Error(`XYGO_WEB_OIDC_CLIENT_SECRET is only supported for providers that require token endpoint client authentication.`);
+  }
 
   if (config.productionMode) {
     for (const [value, label, allowQuery] of [
@@ -137,7 +144,7 @@ export function assertWebRuntimeConfig(config, env = process.env) {
       [config.auth.issuer, "XYGO_OIDC_ISSUER", false],
       [config.auth.authorizationEndpoint, "XYGO_WEB_OIDC_AUTHORIZATION_ENDPOINT", true],
       [config.auth.tokenEndpoint, "XYGO_WEB_OIDC_TOKEN_ENDPOINT", true],
-      [config.auth.endSessionEndpoint, "XYGO_WEB_OIDC_END_SESSION_ENDPOINT", true]
+      ...(config.auth.endSessionEndpoint ? [[config.auth.endSessionEndpoint, "XYGO_WEB_OIDC_END_SESSION_ENDPOINT", true]] : [])
     ]) {
       assertHttpsUrl(value, label, { allowQuery });
     }

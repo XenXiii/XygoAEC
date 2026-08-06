@@ -76,7 +76,8 @@ export const PRIVATE_PRODUCTION_ENV_VARS = Object.freeze([
   "XYGO_OIDC_BINDING_ADMIN_TOKEN",
   "XYGO_WEB_SESSION_SECRET",
   "XYGO_WEB_SESSION_ENCRYPTION_KEY",
-  "XYGO_WEB_SESSION_PG_URL"
+  "XYGO_WEB_SESSION_PG_URL",
+  "XYGO_WEB_OIDC_CLIENT_SECRET"
 ]);
 
 export const SERVER_ONLY_WEB_AUTH_ENV_VARS = Object.freeze([
@@ -183,7 +184,7 @@ const WEB_REQUIRED_ENV_VARS = Object.freeze([
   "STAGED_MODE",
   ...PUBLIC_WEB_RUNTIME_ENV_VARS,
   ...SERVER_ONLY_WEB_AUTH_ENV_VARS
-]);
+].filter((name) => name !== "XYGO_WEB_OIDC_END_SESSION_ENDPOINT"));
 
 const WORKER_REQUIRED_ENV_VARS = Object.freeze([
   "NODE_ENV",
@@ -550,7 +551,10 @@ export function assertProductionWebEnvironment(env = process.env) {
   rejectReservedUrlAudience(env, "web");
   requireHttpsUrl(env, "XYGO_WEB_OIDC_AUTHORIZATION_ENDPOINT", "web", { allowQuery: true });
   requireHttpsUrl(env, "XYGO_WEB_OIDC_TOKEN_ENDPOINT", "web", { allowQuery: true });
-  requireHttpsUrl(env, "XYGO_WEB_OIDC_END_SESSION_ENDPOINT", "web", { allowQuery: true });
+  if (normalizedString(env.XYGO_OIDC_PROVIDER) !== "google") {
+    requireValues(env, ["XYGO_WEB_OIDC_END_SESSION_ENDPOINT"], "web");
+    requireHttpsUrl(env, "XYGO_WEB_OIDC_END_SESSION_ENDPOINT", "web", { allowQuery: true });
+  }
   requireHttpsUrl(env, "XYGO_WEB_MONITORING_ENDPOINT", "web");
   requireSecret(env, "XYGO_WEB_SESSION_SECRET", "web", 32);
   requireSecret(env, "XYGO_WEB_SESSION_ENCRYPTION_KEY", "web", 32);

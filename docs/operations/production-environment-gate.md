@@ -32,14 +32,15 @@ the web process should receive only its list. API/worker secrets are not web con
 - `XYGO_WEB_OIDC_CLIENT_ID`: public-client identifier, not a secret
 - `XYGO_WEB_OIDC_AUTHORIZATION_ENDPOINT`
 - `XYGO_WEB_OIDC_TOKEN_ENDPOINT`
-- `XYGO_WEB_OIDC_END_SESSION_ENDPOINT`
+- `XYGO_WEB_OIDC_END_SESSION_ENDPOINT` unless `XYGO_OIDC_PROVIDER=google`
 - `XYGO_WEB_OIDC_SCOPES`, including `openid`
 - `XYGO_WEB_MONITORING_ENDPOINT`: unauthenticated browser telemetry intake URL
 
 `/runtime-config.json` is built field-by-field from this allowlist. It returns deployment/release,
 app/API URLs, the browser monitoring endpoint, and public OIDC/PKCE settings. It never copies the
-environment object. `XYGO_WEB_OIDC_CLIENT_SECRET` remains forbidden because the browser is a public
-PKCE client.
+environment object. `XYGO_WEB_OIDC_CLIENT_SECRET` is allowed only as a server-side web secret for
+providers such as Google whose token endpoint requires client authentication; it must never be exposed
+to the browser runtime, static assets, logs, or `/runtime-config.json`.
 
 The web login broker additionally requires a private session-signing secret, a `__Host-` Secure and
 HttpOnly SameSite=Lax cookie, exact same-origin renewal/logout checks, bounded transaction/session/token

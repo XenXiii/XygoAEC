@@ -103,6 +103,54 @@ test("OIDC callback rejects missing, expired, or mismatched transaction state", 
   assert.equal((await manager.completeCallback(expired, { cookie: requestCookie(expiredLogin.headers["set-cookie"]) })).status, 400);
 });
 
+test("Google token exchange keeps client secret server-side and stores id token for API verification", async () => {
+  const googleConfig = {
+    ...config,
+    auth: {
+      ...config.auth,
+      provider: "google",
+      audience: "google-client-id.apps.googleusercontent.com",
+      clientId: "google-client-id.apps.googleusercontent.com",
+      clientSecret: "google-client-secret-server-only",
+      authorizationEndpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+      tokenEndpoint: "https://oauth2.googleapis.com/token",
+      endSessionEndpoint: null
+    },
+    session: {
+      ...config.session,
+      requireRefreshToken: false
+    }
+  };
+  const requests = [];
+  const manager = createWebAuthSessionManager(googleConfig, {
+    randomBytes: (length) => Buffer.alloc(length, requests.length + 1),
+    fetchImpl: async (_url, options) => {
+      const body = Object.fromEntries(options.body);
+      requests.push(body);
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return { token_type: "Bearer", access_token: "google-api-access-token", id_token: "google-id-token-jwt", expires_in: 300 };
+        }
+      };
+    }
+  });
+  const login = await manager.beginLogin("/workspace");
+  const authorization = new URL(login.headers.location);
+  const callback = new URL(googleConfig.auth.redirectUri);
+  callback.searchParams.set("code", "google-code");
+  callback.searchParams.set("state", authorization.searchParams.get("state"));
+  const completed = await manager.completeCallback(callback, { cookie: requestCookie(login.headers["set-cookie"]) });
+  const sessionCookie = requestCookie(completed.headers["set-cookie"]);
+  const active = await manager.session({ cookie: sessionCookie });
+  assert.equal(active.body.accessToken, "google-id-token-jwt");
+  assert.equal(requests[0].client_secret, "google-client-secret-server-only");
+  assert.equal(JSON.stringify(active).includes("google-client-secret"), false);
+  const logout = await manager.logout({ cookie: sessionCookie });
+  assert.equal(logout.headers.location, googleConfig.auth.postLogoutRedirectUri);
+});
+
 test("a persisted session survives manager restart and expired records are cleaned", async () => {
   let current = Date.parse("2026-08-05T00:00:00.000Z");
   const store = createMemorySessionStore({ now: () => current });

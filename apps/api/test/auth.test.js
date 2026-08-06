@@ -337,6 +337,18 @@ test("production auth configuration fails closed", () => {
     XYGO_OIDC_JWKS_URI: "https://issuer.example.com/.well-known/jwks.json"
   });
   assert.doesNotThrow(() => assertAuthConfig(secureProduction, { repositoryMode: "postgres" }));
+
+  const googleProduction = loadAuthConfig({
+    NODE_ENV: "production",
+    STAGED_MODE: "false",
+    XYGO_AUTH_MODE: "oidc",
+    XYGO_OIDC_PROVIDER: "google",
+    XYGO_OIDC_ISSUER: "https://accounts.google.com",
+    XYGO_OIDC_AUDIENCE: "google-client-id.apps.googleusercontent.com",
+    XYGO_OIDC_JWKS_URI: "https://www.googleapis.com/oauth2/v3/certs",
+    XYGO_OIDC_ALLOWED_ALGORITHMS: "RS256"
+  });
+  assert.doesNotThrow(() => assertAuthConfig(googleProduction, { repositoryMode: "postgres" }));
 });
 
 test("production OIDC requires an explicit managed provider and JWKS endpoint", () => {
