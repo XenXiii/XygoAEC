@@ -14,6 +14,10 @@ remain online-only and cannot be replayed to another signed-in user from a brows
 
 ## Staging configuration and release
 
+Use the executable preflight, remote smoke suite, HTTPS/ingress setup, and rollback signals in
+`docs/operations/https-staging-deployment-runbook.md`; the checks below remain the browser-level PWA
+release checklist.
+
 1. Complete the authenticated-login runbook, apply all PostgreSQL migrations, and configure the public
    web origin, API origin, IdP metadata, and server-only session secrets through the approved config and
    secret managers. Do not inject server variables into `apps/web/public`.

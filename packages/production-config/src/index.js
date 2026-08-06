@@ -432,15 +432,27 @@ function requireEmail(env, service) {
   const mailbox = normalizedString(env.XYGO_EMAIL_FROM);
   const bracketed = mailbox?.match(/^.{1,200}\s<([^<>]+)>$/);
   const value = bracketed?.[1] ?? mailbox;
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value ?? "")) {
+  if (!validEmailAddress(value)) {
     fail(service, "XYGO_EMAIL_FROM must be a valid email address.");
   }
   requireProductionHostname(value.slice(value.lastIndexOf("@") + 1), "XYGO_EMAIL_FROM", service);
   const replyTo = normalizedString(env.XYGO_EMAIL_REPLY_TO);
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(replyTo ?? "")) {
+  if (!validEmailAddress(replyTo)) {
     fail(service, "XYGO_EMAIL_REPLY_TO must be a valid email address.");
   }
   requireProductionHostname(replyTo.slice(replyTo.lastIndexOf("@") + 1), "XYGO_EMAIL_REPLY_TO", service);
+}
+
+function validEmailAddress(value) {
+  if (!value || value.length > 320) return false;
+  const at = value.indexOf("@");
+  if (at < 1 || at !== value.lastIndexOf("@") || at > 64) return false;
+  const domain = value.slice(at + 1);
+  if (domain.length < 3 || domain.startsWith(".") || domain.endsWith(".") || !domain.includes(".")) return false;
+  for (const character of value) {
+    if (character === " " || character === "\t" || character === "\r" || character === "\n") return false;
+  }
+  return true;
 }
 
 function requireHostValue(env, name, service) {
