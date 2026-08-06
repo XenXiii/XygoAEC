@@ -35,6 +35,10 @@ function headerValue(config, source, key) {
   return route?.headers?.find((header) => header.key.toLowerCase() === key.toLowerCase())?.value;
 }
 
+function hasRewrite(config, source, destination) {
+  return config.rewrites?.some((entry) => entry.source === source && entry.destination === destination) === true;
+}
+
 export function assertStagingDeploymentReadiness({ env, vercelConfig, serviceWorkerSource, migrationVersions }) {
   assertProductionApiEnvironment(env);
   assertProductionWebEnvironment(env);
@@ -64,6 +68,9 @@ export function assertStagingDeploymentReadiness({ env, vercelConfig, serviceWor
   expect(headerValue(vercelConfig, "/service-worker.js", "Cache-Control"), "no-cache", "service worker must be revalidated");
   expect(headerValue(vercelConfig, "/service-worker.js", "Service-Worker-Allowed"), "/", "service worker scope must be explicit");
   expect(headerValue(vercelConfig, "/manifest.webmanifest", "Cache-Control"), "no-cache", "manifest must be revalidated");
+  expect(hasRewrite(vercelConfig, "/(.*)", "/api/web"), true, "Vercel must route web paths through the dynamic web runtime");
+  expect(hasRewrite(vercelConfig, "/ready", "/api/backend"), true, "Vercel must route API readiness through the dynamic API runtime");
+  expect(hasRewrite(vercelConfig, "/v1/(.*)", "/api/backend"), true, "Vercel must route tenant API paths through the dynamic API runtime");
 
   for (const marker of ["/auth/", "/v1/", "/runtime-config.json", "request.method !== \"GET\"", "url.origin !== self.location.origin"]) {
     if (!serviceWorkerSource.includes(marker)) throw new Error(`service worker is missing safe cache boundary: ${marker}`);

@@ -2,8 +2,20 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "buildCommand": null,
-  "outputDirectory": "apps/web/public",
   "cleanUrls": true,
+  "functions": {
+    "api/web.js": {
+      "includeFiles": "apps/web/public/**"
+    }
+  },
+  "rewrites": [
+    { "source": "/v1/(.*)", "destination": "/api/backend" },
+    { "source": "/webhooks/email", "destination": "/api/backend" },
+    { "source": "/health", "destination": "/api/backend" },
+    { "source": "/ready", "destination": "/api/backend" },
+    { "source": "/metrics", "destination": "/api/backend" },
+    { "source": "/(.*)", "destination": "/api/web" }
+  ],
   "headers": [
     {
       "source": "/runtime-config.json",
