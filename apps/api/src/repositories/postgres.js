@@ -15,7 +15,7 @@ import { syntheticTenants } from "../../../../packages/test-fixtures/src/synthet
 // Postgres service (see .github/workflows/ci.yml, postgres job) — not runnable in
 // the offline dev sandbox.
 
-const MIGRATION = new URL("../../../../infrastructure/migrations/postgres/0001_init.sql", import.meta.url);
+const MIGRATIONS_DIRECTORY = new URL("../../../../infrastructure/migrations/postgres/", import.meta.url);
 
 export function createPostgresRepository({ connectionString }) {
   if (!connectionString) {
@@ -30,13 +30,39 @@ export function createPostgresRepository({ connectionString }) {
         const pg = (await import("pg")).default;
         const fs = await import("node:fs");
         const p = new pg.Pool({ connectionString });
-        const sql = fs.readFileSync(MIGRATION, "utf8");
-        await p.query(sql);
+        await applyMigrations(p, fs);
         await seed(p);
         return p;
       })();
     }
     return poolPromise;
+  }
+
+  async function applyMigrations(p, fs) {
+    const files = fs.readdirSync(MIGRATIONS_DIRECTORY)
+      .filter((file) => /^\d+_[a-z0-9_-]+\.sql$/i.test(file))
+      .sort();
+
+    for (const file of files) {
+      const migrationTable = await p.query("SELECT to_regclass('public.schema_migrations') AS table_name");
+      if (migrationTable.rows[0]?.table_name) {
+        const applied = await p.query("SELECT 1 FROM schema_migrations WHERE version = $1", [file]);
+        if (applied.rowCount > 0) continue;
+      }
+      const sql = fs.readFileSync(new URL(file, MIGRATIONS_DIRECTORY), "utf8");
+      await p.query("BEGIN");
+      try {
+        await p.query(sql);
+        await p.query(
+          "INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT (version) DO NOTHING",
+          [file]
+        );
+        await p.query("COMMIT");
+      } catch (error) {
+        await p.query("ROLLBACK");
+        throw error;
+      }
+    }
   }
 
   async function query(text, params = []) {
