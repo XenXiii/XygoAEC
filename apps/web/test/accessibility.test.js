@@ -39,10 +39,10 @@ test("seo support files exist", () => {
   assert.ok(fs.existsSync(path.resolve(process.cwd(), "apps/web/public/favicon.svg")));
 });
 
-test("contact and investor forms expose validation and honest fallback hooks", () => {
-  assert.match(contactHtml, /data-mailto-form/);
+test("contact and investor forms expose validation and secure email hooks", () => {
+  assert.match(contactHtml, /data-email-form/);
   assert.match(contactHtml, /Inquiry type/);
-  assert.match(contactHtml, /No backend submission is configured|does not store your message/);
+  assert.match(contactHtml, /emailed securely to Xygo/);
   assert.match(investorsHtml, /Request Investor Materials/);
-  assert.match(investorsHtml, /data-mailto-form/);
+  assert.match(investorsHtml, /data-email-form/);
 });

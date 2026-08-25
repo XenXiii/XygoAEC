@@ -159,11 +159,11 @@ function setupDemoControls() {
 }
 
 function setupForms() {
-  for (const form of document.querySelectorAll("[data-mailto-form]")) {
+  for (const form of document.querySelectorAll("[data-email-form]")) {
     let submitted = false;
     const status = form.querySelector("[data-form-status]");
 
-    form.addEventListener("submit", (event) => {
+    form.addEventListener("submit", async (event) => {
       event.preventDefault();
 
       if (submitted) {
@@ -204,17 +204,38 @@ function setupForms() {
         return;
       }
 
-      const data = new FormData(form);
-      const subject = encodeURIComponent(form.dataset.subject ?? "Xygo inquiry");
-      const body = encodeURIComponent(Array.from(data.entries())
-        .filter(([key, value]) => key !== "website" && String(value).trim())
-        .map(([key, value]) => `${key}: ${value}`)
-        .join("\n"));
-
       submitted = true;
-      status.textContent = "Opening an email draft. No backend submission is configured yet, so nothing is silently stored or sent from the website.";
-      status.className = "form-status success";
-      window.location.href = `mailto:hello@xygo.pro?subject=${subject}&body=${body}`;
+      status.textContent = "Sending your request…";
+      status.className = "form-status";
+
+      const data = new FormData(form);
+      const fields = Object.fromEntries(Array.from(data.entries())
+        .filter(([key, value]) => key !== "website" && String(value).trim()));
+
+      try {
+        const response = await fetch("/api/contact", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            subject: form.dataset.subject ?? "Xygo inquiry",
+            website: form.elements.website?.value ?? "",
+            fields
+          })
+        });
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.error || "Unable to send request.");
+        }
+
+        status.textContent = "Your request was sent. Xygo will follow up shortly.";
+        status.className = "form-status success";
+        form.reset();
+      } catch {
+        submitted = false;
+        status.textContent = "We could not send your request. Please email xagent@xygo.pro directly.";
+        status.className = "form-status error";
+      }
     });
   }
 }

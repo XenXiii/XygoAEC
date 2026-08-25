@@ -28,7 +28,7 @@ test("demo page includes functional staged interaction hooks and form validation
   assert.match(html, /data-scenario="construction"/);
   assert.match(html, /data-tab="blueprint"/);
   assert.match(html, /data-filter="ai"/);
-  assert.match(html, /data-mailto-form/);
+  assert.match(html, /data-email-form/);
   assert.match(html, /required/);
 });
 
