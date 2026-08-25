@@ -19,11 +19,13 @@ test("plans page shows introductory and renewal pricing honestly", () => {
   assert.match(html, /\$50\/month/);
   assert.match(html, /\$49/);
   assert.match(html, /\$250\/month/);
-  assert.match(html, /Checkout is not yet active/);
+  assert.match(html, /automatically renew monthly/);
 });
 
-test("plans route users to a real contact flow", () => {
-  assert.match(html, /href="\/contact">Choose Basic/);
+test("self-service plans route users to secure checkout", () => {
+  assert.match(html, /href="\/checkout\?plan=basic">Choose Basic/);
+  assert.match(html, /href="\/checkout\?plan=premium">Choose Premium/);
+  assert.match(html, /href="\/checkout\?plan=business">Choose Business/);
   assert.match(html, /href="\/contact">Talk to Xygo/);
 });
 

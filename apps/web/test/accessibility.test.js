@@ -11,15 +11,15 @@ const investorsHtml = fs.readFileSync(path.resolve(process.cwd(), "apps/web/publ
 test("homepage summary includes skip navigation and landmark structure", () => {
   assert.match(html, /class="skip-link"/);
   assert.match(html, /<main[^>]+id="main-content"/);
-  assert.match(html, /Intelligence<br><span>that builds/);
+  assert.match(html, /Systems for<br><span>measurable scale/);
 });
 
 test("homepage constellation progressively enhances the product story", () => {
   assert.match(html, /id="business-constellation"/);
   assert.match(html, /aria-hidden="true"/);
-  assert.match(html, /Find lost value/);
-  assert.match(html, /Benchmark performance/);
-  assert.match(html, /Build the fix/);
+  assert.match(html, /Diagnose constraints/);
+  assert.match(html, /Model growth impact/);
+  assert.match(html, /Deploy the fix/);
 });
 
 test("homepage uses the required public navigation and demo CTA", () => {

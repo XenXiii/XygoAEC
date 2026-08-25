@@ -15,7 +15,7 @@ test("demo preview includes skip navigation and semantic landmarks", () => {
 test("demo preview discloses staged data and human oversight", () => {
   assert.match(html, /Synthetic Data/);
   assert.match(html, /Human Oversight/);
-  assert.match(html, /Non-production environment/);
+  assert.match(html, /Non-production Environment/);
 });
 
 test("demo page keeps public navigation instead of dashboard navigation", () => {
@@ -24,10 +24,14 @@ test("demo page keeps public navigation instead of dashboard navigation", () => 
   assert.doesNotMatch(html, /href="\/dashboard|href="\/admin/i);
 });
 
-test("demo page includes a focused product interaction and one primary CTA", () => {
+test("demo page includes a complete interactive product tour and one conversion CTA", () => {
   assert.match(html, /data-scenario="construction"/);
   assert.match(html, /data-demo-insight/);
   assert.match(html, /data-demo-value/);
+  assert.match(html, /Peer benchmarking/);
+  assert.match(html, /Scaling scenarios/);
+  assert.match(html, /Workflow deployment/);
+  assert.match(html, /ROI tracking/);
   assert.match(html, />Audit my business</);
   assert.doesNotMatch(html, /data-email-form/);
 });
