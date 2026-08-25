@@ -6,26 +6,25 @@ import assert from "node:assert/strict";
 const html = fs.readFileSync(path.resolve(process.cwd(), "apps/web/public/services.html"), "utf8");
 const index = fs.readFileSync(path.resolve(process.cwd(), "apps/web/public/index.html"), "utf8");
 
-test("services page lists all six offer packages", () => {
-  assert.match(html, /AI Platform Blueprint/);
-  assert.match(html, /AI Operations Audit/);
-  assert.match(html, /AI Client Portal/);
-  assert.match(html, /AI Field Report System/);
-  assert.match(html, /AI Compliance Tracker/);
-  assert.match(html, /Contractor Operating Dashboard/);
+test("plans page lists the approved four tiers", () => {
+  assert.match(html, />Basic</);
+  assert.match(html, />Premium</);
+  assert.match(html, />Business</);
+  assert.match(html, />Enterprise</);
 });
 
-test("services page frames packages by the process replaced and stays staged-honest", () => {
-  assert.match(html, /Replaces:/);
-  assert.match(html, /Staged demo/);
-  assert.match(html, /On the roadmap/);
-  assert.match(html, /simulated/i);
+test("plans page shows introductory and renewal pricing honestly", () => {
+  assert.match(html, /\$7/);
+  assert.match(html, /\$25\/month/);
+  assert.match(html, /\$50\/month/);
+  assert.match(html, /\$49/);
+  assert.match(html, /\$250\/month/);
+  assert.match(html, /Checkout is not yet active/);
 });
 
-test("live-demo packages link to their staged surfaces", () => {
-  assert.match(html, /\/platform-blueprint\.html/);
-  assert.match(html, /\/client-portal\.html/);
-  assert.match(html, /\/field-reports\.html/);
+test("plans route users to a real contact flow", () => {
+  assert.match(html, /href="\/contact">Choose Basic/);
+  assert.match(html, /href="\/contact">Talk to Xygo/);
 });
 
 test("home page navigation links to services", () => {

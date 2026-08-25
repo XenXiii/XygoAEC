@@ -5,41 +5,31 @@ const reveals = document.querySelectorAll(".reveal");
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const demoScenarios = {
   construction: {
-    title: "Construction operating system",
-    inputs: ["Leads", "Estimates", "Subcontractors", "Permits", "Field reports", "Job costs"],
-    blueprint: ["Role map: owner, PM, foreman, client", "Automation: estimate follow-up and permit reminders", "Risk: missing COIs and delayed approvals"],
-    modules: ["CRM and lead intake", "Scheduling and dispatch", "Client portal", "Permit tracker", "Job-costing dashboard", "AI project coordinator"],
-    metrics: ["18", "Open jobs", "7", "Permit checks", "4", "AI follow-ups"]
+    title: "Construction overview", inputs: ["QuickBooks", "Job schedule", "CRM"], insight: "Recover stalled estimates", detail: "14 estimates have had no follow-up in seven days.", value: "$42k", confidence: "91%", action: "Automated estimate follow-up"
   },
   field: {
-    title: "Field services operating system",
-    inputs: ["Service calls", "Technicians", "Routes", "Parts", "Invoices", "Customer updates"],
-    blueprint: ["Role map: dispatcher, technician, manager", "Automation: reminders and post-job follow-up", "Risk: missed appointments and incomplete job records"],
-    modules: ["Intake queue", "Dispatch calendar", "Technician notes", "Customer updates", "Invoice status", "AI receptionist"],
-    metrics: ["26", "Scheduled jobs", "9", "Route notes", "12", "Customer updates"]
+    title: "Field services overview", inputs: ["Dispatch", "Invoices", "Customer inbox"], insight: "Reduce empty drive time", detail: "Route overlap is costing an estimated 11 technician hours each week.", value: "$28k", confidence: "88%", action: "Route-aware dispatch board"
   },
   inspections: {
-    title: "Inspections operating system",
-    inputs: ["Requests", "Checklists", "Evidence", "Photos", "Reports", "Approvals"],
-    blueprint: ["Role map: coordinator, inspector, reviewer", "Automation: checklist completion and report drafting", "Risk: missing evidence and late delivery"],
-    modules: ["Inspection intake", "Assignment board", "Evidence vault", "Report builder", "Approval workflow", "AI report assistant"],
-    metrics: ["14", "Active inspections", "32", "Evidence items", "5", "Reports ready"]
+    title: "Inspections overview", inputs: ["Checklists", "Photo archive", "Reports"], insight: "Ship reports sooner", detail: "Five completed inspections are waiting on manual report assembly.", value: "18 hrs", confidence: "94%", action: "Evidence-to-report workflow"
   },
   engineering: {
-    title: "Engineering services operating system",
-    inputs: ["Projects", "Documents", "Reviews", "Milestones", "Client reports", "Technical tasks"],
-    blueprint: ["Role map: principal, engineer, reviewer, client", "Automation: review routing and milestone alerts", "Risk: document drift and unclear ownership"],
-    modules: ["Project dashboard", "Document review", "Milestone tracker", "Client reporting", "Task workflows", "AI knowledge assistant"],
-    metrics: ["11", "Project reviews", "6", "Milestones", "21", "Document checks"]
-  },
-  home: {
-    title: "Home services operating system",
-    inputs: ["Marketing leads", "Estimates", "Appointments", "Field teams", "Payments", "Follow-ups"],
-    blueprint: ["Role map: sales, office, technician, customer", "Automation: lead nurture and payment reminders", "Risk: lost leads and slow follow-up"],
-    modules: ["Lead capture", "Appointment booking", "Field notes", "Customer portal", "Payment tracker", "AI follow-up agent"],
-    metrics: ["38", "New leads", "16", "Booked visits", "19", "Follow-ups"]
+    title: "Engineering overview", inputs: ["Project files", "Review log", "Milestones"], insight: "Unblock design review", detail: "Three critical reviews have no clear owner or response deadline.", value: "9 days", confidence: "86%", action: "Governed review queue"
   }
 };
+
+function simplifyPublicChrome() {
+  if (navLinks) {
+    navLinks.innerHTML = [
+      ["/#product", "Product"],
+      ["/business-audit", "Audit"],
+      ["/services", "Plans"],
+      ["/demo", "Demo"]
+    ].map(([href, label]) => `<li><a href="${href}">${label}</a></li>`).join("");
+  }
+  const actions = document.querySelector(".nav-actions");
+  if (actions) actions.innerHTML = '<a class="text-link" href="/contact">Contact</a><a class="btn btn-primary" href="/demo">Start audit</a>';
+}
 
 function syncHeader() {
   header?.classList.toggle("scrolled", window.scrollY > 8);
@@ -96,22 +86,23 @@ function renderDemoScenario(key = "construction") {
   const scenario = demoScenarios[key] ?? demoScenarios.construction;
   const title = document.querySelector("[data-demo-title]");
   const inputList = document.querySelector("[data-demo-inputs]");
-  const blueprintList = document.querySelector("[data-demo-blueprint]");
-  const moduleList = document.querySelector("[data-demo-modules]");
-  const metrics = document.querySelectorAll("[data-demo-metric]");
+  const insight = document.querySelector("[data-demo-insight]");
+  const detail = document.querySelector("[data-demo-detail]");
+  const value = document.querySelector("[data-demo-value]");
+  const confidence = document.querySelector("[data-demo-confidence]");
+  const action = document.querySelector("[data-demo-action]");
 
-  if (!title || !inputList || !blueprintList || !moduleList) {
+  if (!title || !inputList || !insight) {
     return;
   }
 
   title.textContent = scenario.title;
   inputList.innerHTML = scenario.inputs.map((item) => `<li>${item}</li>`).join("");
-  blueprintList.innerHTML = scenario.blueprint.map((item) => `<li>${item}</li>`).join("");
-  moduleList.innerHTML = scenario.modules.map((item) => `<li>${item}</li>`).join("");
-
-  for (let index = 0; index < metrics.length; index += 1) {
-    metrics[index].textContent = scenario.metrics[index] ?? "";
-  }
+  insight.textContent = scenario.insight;
+  detail.textContent = scenario.detail;
+  value.textContent = scenario.value;
+  confidence.textContent = scenario.confidence;
+  action.textContent = scenario.action;
 }
 
 function setupDemoControls() {
@@ -241,6 +232,7 @@ function setupForms() {
 }
 
 syncHeader();
+simplifyPublicChrome();
 markActivePage();
 revealContent();
 renderDemoScenario();

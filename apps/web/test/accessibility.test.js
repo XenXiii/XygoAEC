@@ -11,14 +11,14 @@ const investorsHtml = fs.readFileSync(path.resolve(process.cwd(), "apps/web/publ
 test("homepage summary includes skip navigation and landmark structure", () => {
   assert.match(html, /class="skip-link"/);
   assert.match(html, /<main[^>]+id="main-content"/);
-  assert.match(html, /Your Business Should Run on a System Built for Your Business/);
+  assert.match(html, /See the whole business/);
 });
 
 test("homepage uses the required public navigation and demo CTA", () => {
   assert.match(html, /href="\/about">About/);
   assert.match(html, /href="\/mission">Mission/);
   assert.match(html, /href="\/investors">Investor Relations/);
-  assert.match(html, /href="\/demo">Request a Demo/);
+  assert.match(html, /href="\/demo">Start audit/);
   assert.doesNotMatch(html, /href="\/control-room.html">Open staged workspace/);
 });
 

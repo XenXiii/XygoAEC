@@ -24,12 +24,12 @@ test("demo page keeps public navigation instead of dashboard navigation", () => 
   assert.doesNotMatch(html, /href="\/dashboard|href="\/admin/i);
 });
 
-test("demo page includes functional staged interaction hooks and form validation", () => {
+test("demo page includes a focused product interaction and one primary CTA", () => {
   assert.match(html, /data-scenario="construction"/);
-  assert.match(html, /data-tab="blueprint"/);
-  assert.match(html, /data-filter="ai"/);
-  assert.match(html, /data-email-form/);
-  assert.match(html, /required/);
+  assert.match(html, /data-demo-insight/);
+  assert.match(html, /data-demo-value/);
+  assert.match(html, />Audit my business</);
+  assert.doesNotMatch(html, /data-email-form/);
 });
 
 test("demo preview styles include focus states and reduced motion support", () => {
