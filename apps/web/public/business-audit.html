@@ -1,0 +1,203 @@
+<!doctype html>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Xygo Business Audit | From Insight to Measurable Growth</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #07111f;
+    --panel: #0d1c2f;
+    --fg: #eef6ff;
+    --muted: #9bb0c8;
+    --line: #3c5877;
+    --input: #123a62;
+    --process: #193b70;
+    --storage: #0f554f;
+    --external: #65471b;
+    --risk: #642d38;
+    --accent: #55b8ff;
+    --good: #72dfc5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  .topbar {
+    max-width: 1184px;
+    margin: 0 auto;
+    padding: 18px 18px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .brand { color: var(--fg); font-size: 22px; font-weight: 800; text-decoration: none; }
+  .brand span { color: var(--good); }
+  .actions { display: flex; gap: 10px; }
+  .actions a {
+    color: var(--fg);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 9px 14px;
+    text-decoration: none;
+    font-weight: 700;
+  }
+  .actions a:last-child { background: var(--good); border-color: var(--good); color: var(--bg); }
+  @media (max-width: 640px) {
+    .topbar { align-items: flex-start; }
+    .actions { flex-direction: column; }
+    .actions a { padding: 7px 10px; font-size: 12px; }
+  }
+  main { max-width: 1220px; margin: 0 auto; padding: 28px 18px; }
+  svg { width: 100%; height: auto; display: block; }
+  .title { font-size: 32px; font-weight: 750; fill: var(--fg); }
+  .subtitle { font-size: 16px; fill: var(--muted); }
+  .step { font-size: 13px; font-weight: 750; letter-spacing: 1.4px; fill: var(--accent); }
+  .label { font-size: 21px; font-weight: 700; fill: var(--fg); }
+  .column { font-size: 12px; font-weight: 750; letter-spacing: 1px; fill: var(--muted); }
+  .body { font-size: 14px; fill: var(--fg); }
+  .small { font-size: 12px; fill: var(--muted); }
+  .node { stroke: var(--line); stroke-width: 1; }
+  .panel { fill: var(--panel); stroke: var(--line); stroke-width: 1.2; }
+  .input { fill: var(--input); }
+  .process { fill: var(--process); }
+  .storage { fill: var(--storage); }
+  .external { fill: var(--external); }
+  .risk { fill: var(--risk); }
+  .edge { stroke: var(--accent); stroke-width: 2; fill: none; }
+  .progress { stroke: var(--line); stroke-width: 5; fill: none; }
+  .progress-done { stroke: var(--good); stroke-width: 5; fill: none; }
+</style>
+<header class="topbar">
+  <a class="brand" href="/" aria-label="Xygo home">Xy<span>go</span></a>
+  <nav class="actions" aria-label="Audit preview actions">
+    <a href="/">Back to site</a>
+    <a href="/demo">Request an audit</a>
+  </nav>
+</header>
+<main>
+  <svg viewBox="0 0 1180 1740" role="img" aria-labelledby="diagram-title diagram-desc">
+    <title id="diagram-title">Xygo Business Audit customer journey</title>
+    <desc id="diagram-desc">Eight steps from business profile and data connection through audit findings, peer benchmarking, scaling scenarios, operating system blueprint, and implementation.</desc>
+    <defs>
+      <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--accent)" />
+      </marker>
+    </defs>
+
+    <text x="40" y="55" class="title">Xygo Business Audit</text>
+    <text x="40" y="84" class="subtitle">Customer journey preview · audit → intelligence → implementation → measurable growth</text>
+    <path d="M40 112 H1140" class="progress" />
+    <path d="M40 112 H1140" class="progress-done" />
+
+    <!-- Connectors behind nodes -->
+    <path d="M590 275 V310" class="edge" marker-end="url(#arrow)" />
+    <path d="M590 475 V510" class="edge" marker-end="url(#arrow)" />
+    <path d="M590 675 V710" class="edge" marker-end="url(#arrow)" />
+    <path d="M590 875 V910" class="edge" marker-end="url(#arrow)" />
+    <path d="M590 1075 V1110" class="edge" marker-end="url(#arrow)" />
+    <path d="M590 1275 V1310" class="edge" marker-end="url(#arrow)" />
+    <path d="M590 1475 V1510" class="edge" marker-end="url(#arrow)" />
+
+    <!-- Step 1 -->
+    <g transform="translate(40 140)">
+      <rect width="1100" height="135" rx="18" class="panel" />
+      <text x="24" y="30" class="step">STEP 1</text><text x="24" y="61" class="label">Business Profile & Goals</text>
+      <rect x="330" y="18" width="230" height="98" rx="12" class="node input" />
+      <text x="350" y="41" class="column">BUSINESS PROVIDES</text><text x="350" y="65" class="body">Industry · size · markets</text><text x="350" y="87" class="body">Goals · pain points · targets</text>
+      <rect x="580" y="18" width="230" height="98" rx="12" class="node process" />
+      <text x="600" y="41" class="column">XYGO ANALYZES</text><text x="600" y="65" class="body">Business model and maturity</text><text x="600" y="87" class="body">Priority audit scope</text>
+      <rect x="830" y="18" width="245" height="98" rx="12" class="node storage" />
+      <text x="850" y="41" class="column">CUSTOMER SEES</text><text x="850" y="65" class="body">Audit plan and success metrics</text><text x="850" y="87" class="body">Scope confirmation</text>
+    </g>
+
+    <!-- Step 2 -->
+    <g transform="translate(40 340)">
+      <rect width="1100" height="135" rx="18" class="panel" />
+      <text x="24" y="30" class="step">STEP 2</text><text x="24" y="61" class="label">Connect, Import, or Enter Data</text>
+      <rect x="330" y="18" width="230" height="98" rx="12" class="node input" />
+      <text x="350" y="41" class="column">THREE PATHS</text><text x="350" y="65" class="body">APIs · CSV/Excel/PDF</text><text x="350" y="87" class="body">Manual KPI entry</text>
+      <rect x="580" y="18" width="230" height="98" rx="12" class="node process" />
+      <text x="600" y="41" class="column">XYGO NORMALIZES</text><text x="600" y="65" class="body">Maps fields and time periods</text><text x="600" y="87" class="body">Flags missing or stale data</text>
+      <rect x="830" y="18" width="245" height="98" rx="12" class="node storage" />
+      <text x="850" y="41" class="column">CUSTOMER SEES</text><text x="850" y="65" class="body">Source · owner · last updated</text><text x="850" y="87" class="body">Data quality checklist</text>
+    </g>
+
+    <!-- Step 3 -->
+    <g transform="translate(40 540)">
+      <rect width="1100" height="135" rx="18" class="panel" />
+      <text x="24" y="30" class="step">STEP 3</text><text x="24" y="61" class="label">Workflow & Systems Audit</text>
+      <rect x="330" y="18" width="230" height="98" rx="12" class="node input" />
+      <text x="350" y="41" class="column">AUDIT AREAS</text><text x="350" y="65" class="body">Sales · operations · finance</text><text x="350" y="87" class="body">People · tools · customer flow</text>
+      <rect x="580" y="18" width="230" height="98" rx="12" class="node process" />
+      <text x="600" y="41" class="column">XYGO DETECTS</text><text x="600" y="65" class="body">Delays · duplication · leakage</text><text x="600" y="87" class="body">Risk and automation potential</text>
+      <rect x="830" y="18" width="245" height="98" rx="12" class="node risk" />
+      <text x="850" y="41" class="column">CUSTOMER SEES</text><text x="850" y="65" class="body">Operational health map</text><text x="850" y="87" class="body">Evidence behind every finding</text>
+    </g>
+
+    <!-- Step 4 -->
+    <g transform="translate(40 740)">
+      <rect width="1100" height="135" rx="18" class="panel" />
+      <text x="24" y="30" class="step">STEP 4</text><text x="24" y="61" class="label">Unified KPI Intelligence</text>
+      <rect x="330" y="18" width="230" height="98" rx="12" class="node input" />
+      <text x="350" y="41" class="column">METRICS</text><text x="350" y="65" class="body">Revenue · margin · conversion</text><text x="350" y="87" class="body">Utilization · cycle time · retention</text>
+      <rect x="580" y="18" width="230" height="98" rx="12" class="node process" />
+      <text x="600" y="41" class="column">XYGO EXPLAINS</text><text x="600" y="65" class="body">What changed and why</text><text x="600" y="87" class="body">Trend, anomaly, and root cause</text>
+      <rect x="830" y="18" width="245" height="98" rx="12" class="node storage" />
+      <text x="850" y="41" class="column">CUSTOMER SEES</text><text x="850" y="65" class="body">Owner and team dashboards</text><text x="850" y="87" class="body">Prioritized alerts and actions</text>
+    </g>
+
+    <!-- Step 5 -->
+    <g transform="translate(40 940)">
+      <rect width="1100" height="135" rx="18" class="panel" />
+      <text x="24" y="30" class="step">STEP 5</text><text x="24" y="61" class="label">Peer Benchmarking</text>
+      <rect x="330" y="18" width="230" height="98" rx="12" class="node external" />
+      <text x="350" y="41" class="column">COMPARABLE PEERS</text><text x="350" y="65" class="body">Industry · size · geography</text><text x="350" y="87" class="body">Stage · service model</text>
+      <rect x="580" y="18" width="230" height="98" rx="12" class="node process" />
+      <text x="600" y="41" class="column">XYGO COMPARES</text><text x="600" y="65" class="body">Current vs. median vs. top 25%</text><text x="600" y="87" class="body">Source and confidence displayed</text>
+      <rect x="830" y="18" width="245" height="98" rx="12" class="node storage" />
+      <text x="850" y="41" class="column">CUSTOMER SEES</text><text x="850" y="65" class="body">Competitive performance gaps</text><text x="850" y="87" class="body">Where scaling value exists</text>
+    </g>
+
+    <!-- Step 6 -->
+    <g transform="translate(40 1140)">
+      <rect width="1100" height="135" rx="18" class="panel" />
+      <text x="24" y="30" class="step">STEP 6</text><text x="24" y="61" class="label">Value & Scaling Scenarios</text>
+      <rect x="330" y="18" width="230" height="98" rx="12" class="node input" />
+      <text x="350" y="41" class="column">BUSINESS CHOOSES</text><text x="350" y="65" class="body">Conservative · target · stretch</text><text x="350" y="87" class="body">Constraints and investment range</text>
+      <rect x="580" y="18" width="230" height="98" rx="12" class="node process" />
+      <text x="600" y="41" class="column">XYGO MODELS</text><text x="600" y="65" class="body">Revenue, cost, time, and risk impact</text><text x="600" y="87" class="body">Assumptions and sensitivity</text>
+      <rect x="830" y="18" width="245" height="98" rx="12" class="node storage" />
+      <text x="850" y="41" class="column">CUSTOMER SEES</text><text x="850" y="65" class="body">Estimated annual value</text><text x="850" y="87" class="body">Confidence and payback range</text>
+    </g>
+
+    <!-- Step 7 -->
+    <g transform="translate(40 1340)">
+      <rect width="1100" height="135" rx="18" class="panel" />
+      <text x="24" y="30" class="step">STEP 7</text><text x="24" y="61" class="label">Operating-System Blueprint</text>
+      <rect x="330" y="18" width="230" height="98" rx="12" class="node input" />
+      <text x="350" y="41" class="column">SELECTED PRIORITIES</text><text x="350" y="65" class="body">Quick wins · core systems</text><text x="350" y="87" class="body">Integrate vs. replace decisions</text>
+      <rect x="580" y="18" width="230" height="98" rx="12" class="node process" />
+      <text x="600" y="41" class="column">XYGO DESIGNS</text><text x="600" y="65" class="body">Dashboards · portals · workflows</text><text x="600" y="87" class="body">Automations · AI agents · controls</text>
+      <rect x="830" y="18" width="245" height="98" rx="12" class="node storage" />
+      <text x="850" y="41" class="column">CUSTOMER SEES</text><text x="850" y="65" class="body">Phased build plan and ownership</text><text x="850" y="87" class="body">Timeline, budget, and success gates</text>
+    </g>
+
+    <!-- Step 8 -->
+    <g transform="translate(40 1540)">
+      <rect width="1100" height="150" rx="18" class="panel" />
+      <text x="24" y="30" class="step">STEP 8</text><text x="24" y="61" class="label">Deploy, Measure & Improve</text>
+      <rect x="330" y="18" width="230" height="112" rx="12" class="node input" />
+      <text x="350" y="41" class="column">HUMAN APPROVAL</text><text x="350" y="65" class="body">Review scope and safeguards</text><text x="350" y="87" class="body">Approve each production phase</text><text x="350" y="109" class="small">Nothing critical deploys silently</text>
+      <rect x="580" y="18" width="230" height="112" rx="12" class="node process" />
+      <text x="600" y="41" class="column">XYGO DELIVERS</text><text x="600" y="65" class="body">Build · integrate · train · launch</text><text x="600" y="87" class="body">Monitor adoption and KPI change</text><text x="600" y="109" class="small">Continuous improvement cycle</text>
+      <rect x="830" y="18" width="245" height="112" rx="12" class="node storage" />
+      <text x="850" y="41" class="column">CUSTOMER SEES</text><text x="850" y="65" class="body">Before/after performance</text><text x="850" y="87" class="body">ROI, adoption, and next actions</text><text x="850" y="109" class="small">Measured business outcomes</text>
+    </g>
+
+    <text x="40" y="1720" class="small">Xygo principle: connect what exists · import what you have · enter what is missing · build only what creates measurable value</text>
+  </svg>
+</main>
