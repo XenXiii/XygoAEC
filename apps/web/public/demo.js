@@ -231,6 +231,110 @@ function setupForms() {
   }
 }
 
+function setupBusinessConstellation() {
+  const canvas = document.querySelector("#business-constellation");
+  if (!canvas) return;
+
+  const context = canvas.getContext("2d", { alpha: true });
+  if (!context) return;
+
+  const points = [
+    { x: .21, y: .29, color: "110,231,224" },
+    { x: .77, y: .27, color: "116,167,255" },
+    { x: .16, y: .68, color: "161,140,255" },
+    { x: .82, y: .65, color: "110,231,224" },
+    { x: .50, y: .84, color: "116,167,255" },
+    { x: .38, y: .18, color: "255,139,149" },
+    { x: .66, y: .47, color: "161,140,255" }
+  ];
+  const pointer = { x: .5, y: .5, active: false };
+  let width = 0;
+  let height = 0;
+  let frame = 0;
+  let visible = true;
+  let inViewport = true;
+
+  function resize() {
+    const bounds = canvas.getBoundingClientRect();
+    const scale = Math.min(window.devicePixelRatio || 1, 2);
+    width = Math.max(1, bounds.width);
+    height = Math.max(1, bounds.height);
+    canvas.width = Math.round(width * scale);
+    canvas.height = Math.round(height * scale);
+    context.setTransform(scale, 0, 0, scale, 0, 0);
+  }
+
+  function draw(time = 0) {
+    context.clearRect(0, 0, width, height);
+    const center = { x: width * .5, y: height * .5 };
+    const focus = pointer.active ? { x: pointer.x * width, y: pointer.y * height } : center;
+
+    for (let index = 0; index < points.length; index += 1) {
+      const point = points[index];
+      const drift = reduceMotion ? 0 : Math.sin(time * .0007 + index * 1.7) * 8;
+      const x = point.x * width + drift;
+      const y = point.y * height + Math.cos(time * .0006 + index) * (reduceMotion ? 0 : 6);
+      const influence = Math.max(0, 1 - Math.hypot(x - focus.x, y - focus.y) / (width * .34));
+      const targetX = center.x + (focus.x - center.x) * influence * .08;
+      const targetY = center.y + (focus.y - center.y) * influence * .08;
+
+      const gradient = context.createLinearGradient(x, y, targetX, targetY);
+      gradient.addColorStop(0, `rgba(${point.color},${.16 + influence * .28})`);
+      gradient.addColorStop(1, "rgba(110,231,224,.34)");
+      context.beginPath();
+      context.moveTo(x, y);
+      context.quadraticCurveTo((x + targetX) / 2 + drift * 1.7, (y + targetY) / 2 - drift, targetX, targetY);
+      context.strokeStyle = gradient;
+      context.lineWidth = .7 + influence * 1.2;
+      context.stroke();
+
+      const glow = context.createRadialGradient(x, y, 0, x, y, 22 + influence * 18);
+      glow.addColorStop(0, `rgba(${point.color},.9)`);
+      glow.addColorStop(.18, `rgba(${point.color},.34)`);
+      glow.addColorStop(1, `rgba(${point.color},0)`);
+      context.fillStyle = glow;
+      context.fillRect(x - 42, y - 42, 84, 84);
+      context.beginPath();
+      context.arc(x, y, 3.5 + influence * 2.5, 0, Math.PI * 2);
+      context.fillStyle = `rgba(${point.color},1)`;
+      context.fill();
+    }
+
+    if (!reduceMotion && visible && inViewport) frame = requestAnimationFrame(draw);
+  }
+
+  function updatePointer(event) {
+    const bounds = canvas.getBoundingClientRect();
+    pointer.x = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width));
+    pointer.y = Math.min(1, Math.max(0, (event.clientY - bounds.top) / bounds.height));
+    pointer.active = true;
+  }
+
+  canvas.addEventListener("pointermove", updatePointer, { passive: true });
+  canvas.addEventListener("pointerleave", () => { pointer.active = false; });
+  window.addEventListener("resize", () => { resize(); if (reduceMotion) draw(); }, { passive: true });
+  document.addEventListener("visibilitychange", () => {
+    visible = !document.hidden;
+    if (visible && inViewport && !reduceMotion) {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(draw);
+    }
+  });
+  if ("IntersectionObserver" in window) {
+    const observer = new IntersectionObserver(([entry]) => {
+      inViewport = entry.isIntersecting;
+      if (inViewport && visible && !reduceMotion) {
+        cancelAnimationFrame(frame);
+        frame = requestAnimationFrame(draw);
+      }
+    }, { rootMargin: "120px" });
+    observer.observe(canvas);
+  }
+
+  resize();
+  draw();
+}
+
 syncHeader();
 simplifyPublicChrome();
 markActivePage();
@@ -238,6 +342,7 @@ revealContent();
 renderDemoScenario();
 setupDemoControls();
 setupForms();
+setupBusinessConstellation();
 
 window.addEventListener("scroll", syncHeader, { passive: true });
 menuToggle?.addEventListener("click", toggleMenu);

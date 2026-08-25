@@ -23,13 +23,31 @@
   </header>
 
   <main id="main-content">
-    <section class="hero hero-home">
-      <div class="container hero-stack">
-        <p class="eyebrow reveal"><span class="live-dot"></span>Business intelligence, built around you</p>
-        <h1 class="reveal">See the whole business.<br><span>Fix what matters.</span></h1>
-        <p class="hero-lead reveal">Xygo connects the tools you already use, finds where value is leaking, and builds the system to recover it.</p>
-        <div class="hero-actions reveal"><a class="btn btn-primary btn-large" href="/demo">See Xygo in action <span aria-hidden="true">↗</span></a></div>
+    <section class="hero hero-home constellation-hero">
+      <div class="container constellation-layout">
+        <div class="constellation-copy reveal">
+          <p class="eyebrow"><span class="live-dot"></span>Business intelligence</p>
+          <h1>Intelligence<br><span>that builds.</span></h1>
+          <p>Xygo connects your business, finds lost value, and builds the system to recover it.</p>
+          <div class="constellation-actions"><a class="btn btn-primary btn-large" href="/business-audit">Audit my business</a><a class="text-link" href="/demo">See the demo <span aria-hidden="true">↗</span></a></div>
+        </div>
 
+        <div class="constellation-stage reveal" aria-label="Connected business systems flowing into Xygo intelligence">
+          <canvas id="business-constellation" width="720" height="720" aria-hidden="true"></canvas>
+          <div class="constellation-core" aria-hidden="true">XY</div>
+          <span class="constellation-label label-books">QuickBooks</span>
+          <span class="constellation-label label-crm">CRM</span>
+          <span class="constellation-label label-email">Email</span>
+          <span class="constellation-label label-stripe">Stripe</span>
+          <span class="constellation-label label-manual">Manual</span>
+        </div>
+
+        <div class="constellation-outcomes reveal">
+          <p>Find lost value</p><p>Benchmark performance</p><p>Build the fix</p>
+        </div>
+      </div>
+
+      <div class="container hero-proof">
         <div class="product-window reveal" id="product" aria-label="Xygo business intelligence dashboard preview">
           <div class="window-bar"><div class="window-mark"><span></span><strong>XYGO / OVERVIEW</strong></div><span class="system-status">LIVE MODEL</span></div>
           <div class="window-grid">
