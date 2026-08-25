@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Your Privacy Choices | Xygo</title>
+    <meta name="description" content="Submit a request to opt out of the sale or sharing of personal information, access your data, correct it, or request deletion.">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <header class="site-header"><div class="nav-inner"><a class="brand" href="/">Xy<span>go</span></a><div class="nav-actions"><a class="btn btn-secondary" href="/privacy">Privacy Policy</a></div></div></header>
+    <main id="main-content">
+      <section class="section-muted" style="padding-top:8rem;min-height:75vh">
+        <div class="container" style="max-width:760px">
+          <p class="eyebrow">Privacy Control</p>
+          <h1>Your Privacy Choices</h1>
+          <p style="margin-top:1rem">Xygo does not sell personal information for money. Use this form to opt out of sale or sharing as those terms may be defined by applicable privacy laws, or to submit another data request.</p>
+          <form class="contact-form" id="privacy-form" style="margin-top:2rem">
+            <label>Request type<select name="requestType" required><option value="do_not_sell_or_share">Do not sell or share my personal information</option><option value="access">Access my personal information</option><option value="correction">Correct my personal information</option><option value="deletion">Delete my personal information</option></select></label>
+            <label>Name <span class="muted">(optional)</span><input name="name" autocomplete="name" maxlength="200"></label>
+            <label>Email<input name="email" type="email" autocomplete="email" maxlength="254" required></label>
+            <label class="visually-hidden" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
+            <button class="btn btn-primary" type="submit">Submit privacy request</button>
+            <p id="privacy-status" role="status" aria-live="polite"></p>
+          </form>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="/privacy-choices.js"></script>
+  </body>
+</html>
+

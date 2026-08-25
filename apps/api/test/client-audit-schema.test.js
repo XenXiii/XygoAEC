@@ -44,3 +44,13 @@ test("audit results support one free solution and paid full access", () => {
   assert.match(migration, /full_results_unlocked_at/);
 });
 
+test("privacy requests can be captured before a workspace exists", () => {
+  const privacyMigration = fs.readFileSync(
+    path.resolve(process.cwd(), "infrastructure/migrations/postgres/0003_privacy_requests.sql"),
+    "utf8"
+  );
+  assert.match(privacyMigration, /CREATE TABLE IF NOT EXISTS privacy_requests/);
+  assert.match(privacyMigration, /email_lookup_hash CHAR\(64\) NOT NULL/);
+  assert.match(privacyMigration, /email_ciphertext BYTEA NOT NULL/);
+  assert.match(privacyMigration, /do_not_sell_or_share/);
+});
