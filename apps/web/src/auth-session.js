@@ -57,6 +57,13 @@ function tokenExpiry(payload, now, clockToleranceSec = 0) {
   return now + Math.max(1, expiresIn - clockToleranceSec) * 1000;
 }
 
+function sessionBearerToken(payload, config) {
+  if (config.auth.provider === "google") {
+    return required(payload.id_token, "OIDC ID token");
+  }
+  return required(payload.access_token, "OIDC access token");
+}
+
 export function createWebAuthSessionManager(config, {
   fetchImpl = fetch,
   now = () => Date.now(),
@@ -124,6 +131,7 @@ export function createWebAuthSessionManager(config, {
       const payload = await exchange({
         grant_type: "authorization_code",
         client_id: config.auth.clientId,
+        ...(config.auth.clientSecret ? { client_secret: config.auth.clientSecret } : {}),
         code,
         redirect_uri: config.auth.redirectUri,
         code_verifier: transaction.verifier
@@ -133,7 +141,7 @@ export function createWebAuthSessionManager(config, {
       const id = base64url(randomBytes(32));
       await store.set(id, {
         kind: "user_session",
-        accessToken: required(payload.access_token, "OIDC access token"),
+        accessToken: sessionBearerToken(payload, config),
         refreshToken: payload.refresh_token ?? null,
         accessTokenExpiresAt: tokenExpiry(payload, current, config.session.tokenClockToleranceSec),
         createdAt: current,
@@ -163,10 +171,11 @@ export function createWebAuthSessionManager(config, {
       const payload = await exchange({
         grant_type: "refresh_token",
         client_id: config.auth.clientId,
+        ...(config.auth.clientSecret ? { client_secret: config.auth.clientSecret } : {}),
         refresh_token: session.refreshToken
       });
       const current = now();
-      session.accessToken = required(payload.access_token, "OIDC access token");
+      session.accessToken = sessionBearerToken(payload, config);
       session.refreshToken = payload.refresh_token ?? session.refreshToken;
       session.accessTokenExpiresAt = tokenExpiry(payload, current, config.session.tokenClockToleranceSec);
       session.idleExpiresAt = Math.min(current + config.session.idleTtlMs, session.absoluteExpiresAt);
@@ -176,6 +185,9 @@ export function createWebAuthSessionManager(config, {
     async logout(headers = {}) {
       const id = verifySigned(cookieValue(headers, sessionCookie), config.session.secret);
       if (id) await store.delete(id);
+      if (!config.auth.endSessionEndpoint) {
+        return { status: 302, headers: { location: config.auth.postLogoutRedirectUri, "set-cookie": clearCookie(sessionCookie), "cache-control": "no-store" } };
+      }
       const target = new URL(config.auth.endSessionEndpoint);
       target.searchParams.set("client_id", config.auth.clientId);
       target.searchParams.set("post_logout_redirect_uri", config.auth.postLogoutRedirectUri);

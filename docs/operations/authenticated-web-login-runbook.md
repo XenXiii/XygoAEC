@@ -22,12 +22,15 @@ Self-asserted staged tenant headers do not grant access in OIDC mode.
 ## Staging configuration and registration
 
 1. Create a public OIDC client with Authorization Code and PKCE S256 enabled. Do not create or inject
-   a browser client secret.
+   a browser client secret. If the provider is Google, store `XYGO_WEB_OIDC_CLIENT_SECRET` only in the
+   server-side web runtime; it is required for Google's token endpoint and must never appear in
+   `/runtime-config.json` or browser assets.
 2. Register the exact callback `https://<staging-app>/auth/callback` and the exact post-logout URI
    `https://<staging-app>/`. Wildcards, HTTP, loopback, query-bearing, and fragment-bearing redirect
    values are forbidden.
 3. Configure the approved HTTPS issuer, audience, authorization, token, logout, and JWKS values. Replace
-   every example placeholder through the secret/config manager.
+   every example placeholder through the secret/config manager. Google does not publish a standard
+   OIDC end-session endpoint, so omit `XYGO_WEB_OIDC_END_SESSION_ENDPOINT` for `XYGO_OIDC_PROVIDER=google`.
 4. Store independent `XYGO_WEB_SESSION_SECRET` and `XYGO_WEB_SESSION_ENCRYPTION_KEY` values only in
    the web process secret manager. Use at least 32 random characters for each. A signing-secret rotation
    invalidates browser handles; encryption-key rotation requires a reviewed re-encryption or session purge.

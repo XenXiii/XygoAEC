@@ -6,6 +6,7 @@ const SUPPORTED_OIDC_PROVIDERS = new Set([
   "clerk",
   "cognito",
   "entra",
+  "google",
   "okta",
   "other-managed-oidc"
 ]);

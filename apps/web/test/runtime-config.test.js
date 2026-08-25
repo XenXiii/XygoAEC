@@ -64,7 +64,7 @@ test("production web startup fails closed without managed OIDC configuration", (
   );
   assert.throws(
     () => createWebServer({ env: { ...productionEnv, XYGO_WEB_OIDC_CLIENT_SECRET: "must-not-reach-browser" } }),
-    /CLIENT_SECRET is forbidden/
+    /only supported for providers/
   );
 });
 
@@ -88,9 +88,31 @@ test("public runtime config fixes browser auth to code plus PKCE and memory toke
   assert.equal(JSON.stringify(publicConfig).includes(productionEnv.XYGO_WEB_SESSION_PG_URL), false);
 });
 
+test("Google OIDC uses a server-only client secret and optional provider logout", () => {
+  const googleEnv = {
+    ...productionEnv,
+    XYGO_OIDC_PROVIDER: "google",
+    XYGO_OIDC_ISSUER: "https://accounts.google.com",
+    XYGO_OIDC_AUDIENCE: "google-client-id.apps.googleusercontent.com",
+    XYGO_WEB_OIDC_CLIENT_ID: "google-client-id.apps.googleusercontent.com",
+    XYGO_WEB_OIDC_CLIENT_SECRET: "google-client-secret-server-only",
+    XYGO_WEB_OIDC_AUTHORIZATION_ENDPOINT: "https://accounts.google.com/o/oauth2/v2/auth",
+    XYGO_WEB_OIDC_TOKEN_ENDPOINT: "https://oauth2.googleapis.com/token",
+    XYGO_WEB_OIDC_END_SESSION_ENDPOINT: undefined
+  };
+  const config = assertWebRuntimeConfig(loadWebRuntimeConfig(googleEnv), googleEnv);
+  const publicConfig = publicWebRuntimeConfig(config);
+  assert.equal(publicConfig.auth.provider, "google");
+  assert.equal(publicConfig.auth.redirectUri, "https://app.production.xygoaec.com/auth/callback");
+  assert.equal(publicConfig.auth.endSessionEndpoint, null);
+  assert.equal(JSON.stringify(publicConfig).includes(googleEnv.XYGO_WEB_OIDC_CLIENT_SECRET), false);
+});
+
 test("web server exposes only the non-secret managed IdP runtime manifest", () => {
   const secretValues = Object.fromEntries(
-    PRIVATE_PRODUCTION_ENV_VARS.map((name, index) => [name, `private-sentinel-${index}-must-not-be-public`])
+    PRIVATE_PRODUCTION_ENV_VARS
+      .filter((name) => name !== "XYGO_WEB_OIDC_CLIENT_SECRET")
+      .map((name, index) => [name, `private-sentinel-${index}-must-not-be-public`])
   );
   const storageValues = Object.fromEntries(
     SERVER_ONLY_STORAGE_ENV_VARS.map((name, index) => [name, `storage-sentinel-${index}-must-not-be-public`])

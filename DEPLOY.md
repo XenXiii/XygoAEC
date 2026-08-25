@@ -1,69 +1,43 @@
-# Xygo — Vercel Deploy Guide (Static Site)
+# Xygo Vercel Deploy Guide
 
-The Xygo website is a **static multi-page site** in `apps/web/public` — **no Next.js, no build step**.
-`vercel.json` is already configured for this. Follow the steps below.
+The Vercel deployment now uses Node serverless entrypoints instead of a static-only output directory.
+This is required for `/runtime-config.json`, `/auth/*`, `/ready`, `/v1/*`, and the staging smoke tests.
 
-- **Repo to import:** https://github.com/XenXiii/XygoAEC
-- **Branch:** `main`
-- **Config file:** `vercel.json` (committed at repo root)
+- Repo to import: `https://github.com/XenXiii/XygoAEC`
+- Branch: `main`
+- Config file: `vercel.json` at the repo root
+- Framework preset: Other
+- Root directory: repo root (`./`)
+- Build command: blank
+- Output directory: blank
 
-```json
-{
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": null,
-  "buildCommand": null,
-  "outputDirectory": "apps/web/public"
-}
+Do not set the project output directory to `apps/web/public`; that bypasses the dynamic runtime and
+causes `/runtime-config.json` to return a static 404.
+
+## Runtime Routing
+
+`vercel.json` routes:
+
+- `/v1/*`, `/ready`, `/health`, `/metrics`, and `/webhooks/email` to the API serverless function.
+- all other paths, including `/runtime-config.json`, `/auth/*`, and static web assets, to the web
+  serverless function.
+
+The web function serves files from `apps/web/public` and builds `/runtime-config.json` field-by-field
+from the public allowlist. Server-only secrets are excluded.
+
+## Staging Rules
+
+Before promoting a Vercel deployment as staging, configure the complete environment contract from
+`config/production.env.example` plus `config/staging-deployment.env.example`, then run:
+
+```sh
+npm run check:staging
+npm run migrate:postgres
+npm run check:postgres
+XYGO_STAGING_BASE_URL=https://STAGING_WEB_HOST \
+XYGO_STAGING_EXPECTED_RELEASE=$XYGO_RELEASE \
+npm run smoke:staging
 ```
 
-## Deploy from scratch (Vercel dashboard)
-
-1. Go to https://vercel.com/new
-2. **Import Git Repository** → select `XenXiii/XygoAEC`.
-3. In **Configure Project**, set:
-
-   | Setting | Value |
-   | --- | --- |
-   | **Framework Preset** | **Other** |
-   | **Root Directory** | `./` (repo root — leave as default; do **not** set to `apps/web`) |
-   | **Build Command** | leave blank / Override **off** |
-   | **Output Directory** | blank (uses `vercel.json` → `apps/web/public`) |
-   | **Install Command** | default |
-
-4. **Deploy**.
-
-## Fixing an EXISTING project that failed with "No Next.js version detected"
-
-That error means the project's Framework Preset is Next.js. Fix it:
-
-1. Project → **Settings → Build & Deployment**.
-2. **Framework Preset** → **Other**.
-3. **Root Directory** → `./` (must be the repo root where `package.json` + `vercel.json` live).
-4. **Build Command** → turn **Override off** (clear any `next build`).
-5. **Save**, then **Deployments → Redeploy** the latest commit on `main` (currently `a65c078`).
-
-`vercel.json` (`"framework": null`) now overrides detection, so a fresh deploy of `main` should
-succeed even before touching the dashboard — but aligning the dashboard avoids future surprises.
-
-## Expected routes after deploy
-
-| URL | Serves |
-| --- | --- |
-| `/` | `index.html` (Control Room) |
-| `/platform.html` | Platform overview (marketing) |
-| `/demo.html` | Pivot preview (marketing) |
-| `/blueprint.html` | Blueprint review workspace |
-| `/platform-blueprint.html` | Generated platform blueprint panel |
-
-## Important caveat (staged)
-
-The marketing pages (`platform.html`, `demo.html`) are fully static and render completely on Vercel.
-The **data panels** (Control Room, blueprint, platform-blueprint) call the staged API at
-`http://127.0.0.1:3000`, which is **not deployed** — on Vercel those panels show their
-"API not reachable" state by design. Hosting the API is a separate step that would touch the
-staged/non-production guardrails, so it is intentionally not part of this static deploy.
-
-## Guardrails
-
-Static deploy only. No live integrations, no production writes, no real customer data. Synthetic
-"SIMULATED DATA" banners remain on the app surfaces.
+The current code treats `NODE_ENV=production` plus `XYGO_DEPLOY_ENVIRONMENT=staging` as a staging
+deployment with production safety gates enabled.
