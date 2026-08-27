@@ -104,6 +104,7 @@ test("documented path set matches the implemented surface (drift guard)", () => 
     "/ready",
     "/metrics",
     "/webhooks/email",
+    "/v1/session/audit-result",
     "/v1/tenants/{tenantId}/projects",
     "/v1/tenants/{tenantId}/dashboard/executive",
     "/v1/tenants/{tenantId}/blueprint-workspace",

@@ -19,6 +19,7 @@ import {
   createEmailDeliveryOutboxEvent
 } from "../../../packages/email-delivery/src/index.js";
 import { createIdempotencyStore, idempotencyKeyFor } from "./reliability/idempotency.js";
+import { synthesizeTenantAuditResult } from "../../../packages/audit-results/src/index.js";
 import {
   createPendingFileRecord,
   createStorageFromEnv,
@@ -47,10 +48,10 @@ async function withIdempotency({ idempotency, clientKey, tenantId, path, compute
 
 const defaultRepository = createRepositoryFromEnv();
 
-function json(status, body) {
+function json(status, body, headers = {}) {
   return {
     status,
-    headers: baseResponseHeaders({ "content-type": "application/json" }),
+    headers: baseResponseHeaders({ "content-type": "application/json", ...headers }),
     body
   };
 }
@@ -699,6 +700,23 @@ async function routeApiRequest({
   }
 
   const parts = splitPath(pathname);
+
+  if (method === "GET" && parts.join("/") === "v1/session/audit-result") {
+    const effectivePrincipal = principal ?? (authConfig.mode === "oidc" ? null : resolveStagedPrincipal({ headers }));
+    if (!effectivePrincipal?.tenantId) {
+      return json(401, { error: "unauthorized", message: "Authentication and tenant membership are required.", staged: true });
+    }
+    const tenantId = effectivePrincipal.tenantId;
+    const denied = authorize({ principal: effectivePrincipal, tenantId, resource: "executive_dashboard", action: "read" });
+    if (denied) return denied;
+    const [projects, issues, findings, permits] = await Promise.all([
+      repository.listProjectsByTenant(tenantId),
+      repository.listIssuesByTenant(tenantId),
+      repository.listAiFindingsByTenant(tenantId),
+      repository.listPermitPackagesByTenant(tenantId)
+    ]);
+    return json(200, { item: synthesizeTenantAuditResult({ tenantId, projects, issues, findings, permits }), staged: effectivePrincipal.staged === true }, { "cache-control": "no-store" });
+  }
 
   if (parts[0] !== "v1" || parts[1] !== "tenants" || !parts[2]) {
     return notFound();

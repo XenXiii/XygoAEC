@@ -18,6 +18,13 @@
     <div class="banner" role="status" id="release-banner">STAGING RELEASE SURFACE · TENANT DATA LOADS ONLY AFTER AUTHORIZATION</div>
     <main class="layout" id="main-content" tabindex="-1">
       <header class="panel"><p class="eyebrow">Authenticated workspace</p><h1>Work ready for the field and the client.</h1><p class="subtitle">Use one release surface for contractor reporting, approved client information, workflow coordination, and staged activation checks.</p><div class="status-row" id="workspace-auth-status" aria-live="polite"><span class="tone-pill neutral">Checking session</span></div></header>
+      <section class="panel" aria-labelledby="audit-result-heading"><div class="panel-header"><div><p class="eyebrow">Evidence-backed audit</p><h2 id="audit-result-heading">Current business signals</h2></div></div><div class="summary-grid" aria-live="polite">
+        <article class="metric-card"><span class="metric-label">Business health</span><strong><span id="audit-health">—</span><small>/100</small></strong></article>
+        <article class="metric-card"><span class="metric-label">Opportunities</span><strong id="audit-opportunities">—</strong></article>
+        <article class="metric-card"><span class="metric-label">Annual revenue opportunity</span><strong id="audit-revenue">—</strong></article>
+        <article class="metric-card"><span class="metric-label">Operational issues</span><strong id="audit-issues">—</strong></article>
+        <article class="metric-card"><span class="metric-label">Recommended automation</span><strong id="audit-automation">—</strong></article>
+      </div><p class="subtitle" id="audit-result-note">Loading audit results…</p></section>
       <section class="panel" aria-labelledby="work-heading"><div class="panel-header"><div><p class="eyebrow">Work surfaces</p><h2 id="work-heading">Choose a workspace</h2></div></div><div class="board-grid release-grid">
         <a class="board release-card" href="/field-reports"><p class="eyebrow">Contractor</p><h3>Field reports</h3><p>Capture observations, draft reports, review them, and release approved updates.</p><span>Open contractor reports →</span></a>
         <a class="board release-card" href="/client-portal"><p class="eyebrow">Client</p><h3>Client portal</h3><p>Review approved reports, project status, files, and client-visible updates.</p><span>Open client portal →</span></a>

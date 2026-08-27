@@ -153,6 +153,17 @@
         }
       }
     },
+    "/v1/session/audit-result": {
+      "get": {
+        "summary": "Return an evidence-backed audit result for the verified principal tenant",
+        "description": "OIDC tenant scope is derived from canonical identity membership. Staged mode requires the synthetic tenant header. Responses are private and no-store.",
+        "responses": {
+          "200": { "description": "tenant-derived audit result with explicit unknowns for unsupported metrics" },
+          "401": { "description": "authenticated tenant identity required" },
+          "403": { "description": "principal role cannot read executive business signals" }
+        }
+      }
+    },
     "/v1/tenants/{tenantId}/projects": {
       "get": {
         "summary": "List staged projects for a tenant",
