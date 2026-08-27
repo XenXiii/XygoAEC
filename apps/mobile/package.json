@@ -1,0 +1,28 @@
+{
+  "name": "@xygo/mobile",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "expo start",
+    "test": "node --test test/**/*.test.js",
+    "typecheck": "tsc --noEmit",
+    "export": "expo export --platform ios && expo export --platform android"
+  },
+  "dependencies": {
+    "expo": "~55.0.0",
+    "expo-auth-session": "~55.0.18",
+    "expo-crypto": "~55.0.19",
+    "expo-linking": "~55.0.17",
+    "expo-router": "~55.0.18",
+    "expo-secure-store": "~55.0.18",
+    "expo-web-browser": "~55.0.20",
+    "react": "19.2.0",
+    "react-native": "0.83.10"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.10",
+    "typescript": "~5.9.0"
+  }
+}

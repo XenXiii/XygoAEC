@@ -93,7 +93,7 @@ test("verifyJwt rejects a malformed token", () => {
 
 // --- principal resolution -----------------------------------------------------
 
-test("resolveOidcPrincipal maps verified claims to a principal", async () => {
+test("resolveOidcPrincipal verifies identity but does not trust tenant or role claims", async () => {
   const jwks = createStaticJwks(KEYS);
   const principal = await resolveOidcPrincipal({
     headers: { authorization: `Bearer ${signJwt(baseClaims())}` },
@@ -103,18 +103,17 @@ test("resolveOidcPrincipal maps verified claims to a principal", async () => {
   });
   assert.equal(principal.authenticated, true);
   assert.equal(principal.staged, false);
-  assert.equal(principal.tenantId, "tenant-commercial-sim");
+  assert.equal(principal.tenantId, null);
   assert.equal(principal.userId, "user-123");
-  assert.equal(principal.organizationRole, "company_admin");
+  assert.equal(principal.organizationRole, null);
 });
 
-test("resolveOidcPrincipal rejects a token missing the tenant claim", async () => {
+test("resolveOidcPrincipal accepts identity tokens without tenant claims", async () => {
   const jwks = createStaticJwks(KEYS);
   const token = signJwt(baseClaims({ org_id: undefined }));
-  await assert.rejects(
-    () => resolveOidcPrincipal({ headers: { authorization: `Bearer ${token}` }, jwks, config: oidcConfig, now }),
-    (e) => e.code === "missing_tenant_claim"
-  );
+  const principal = await resolveOidcPrincipal({ headers: { authorization: `Bearer ${token}` }, jwks, config: oidcConfig, now });
+  assert.equal(principal.userId, "user-123");
+  assert.equal(principal.tenantId, null);
 });
 
 test("resolveOidcPrincipal requires a bearer token", async () => {

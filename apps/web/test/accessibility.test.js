@@ -11,22 +11,23 @@ const investorsHtml = fs.readFileSync(path.resolve(process.cwd(), "apps/web/publ
 test("homepage summary includes skip navigation and landmark structure", () => {
   assert.match(html, /class="skip-link"/);
   assert.match(html, /<main[^>]+id="main-content"/);
-  assert.match(html, /Systems for<br><span>measurable scale/);
+  assert.match(html, /What would you like Xygo<br>to improve/);
+  assert.match(html, /id="scale-composer"/);
 });
 
 test("homepage constellation progressively enhances the product story", () => {
   assert.match(html, /id="business-constellation"/);
   assert.match(html, /aria-hidden="true"/);
-  assert.match(html, /Diagnose constraints/);
-  assert.match(html, /Model growth impact/);
-  assert.match(html, /Deploy the fix/);
+  assert.match(html, /FROM SIGNAL TO SYSTEM/);
+  assert.match(html, /YOUR AI OPERATING TEAM/);
+  assert.match(html, /Ask\. Inspect\. Approve\. Execute/);
 });
 
 test("homepage uses the required public navigation and demo CTA", () => {
   assert.match(html, /href="\/about">About/);
   assert.match(html, /href="\/mission">Mission/);
   assert.match(html, /href="\/investors">Investor Relations/);
-  assert.match(html, /href="\/demo">Start audit/);
+  assert.match(html, /href="#ask-xygo">Ask Xygo/);
   assert.doesNotMatch(html, /href="\/control-room.html">Open staged workspace/);
 });
 

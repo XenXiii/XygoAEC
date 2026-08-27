@@ -54,18 +54,19 @@ export async function resolveOidcPrincipal({ headers = {}, searchParams = null, 
     clockToleranceSec: config.oidc.clockToleranceSec
   });
 
-  const tenantId = claims[config.oidc.tenantClaim] ?? null;
-  if (!tenantId) {
-    throw new AuthError("missing_tenant_claim", `Token is missing the tenant claim (${config.oidc.tenantClaim}).`);
-  }
-
+  const verifiedEmail=claims.email_verified===true&&typeof claims.email==="string"?claims.email.trim().toLowerCase():null;
   return {
     userId: claims.sub ?? null,
-    tenantId,
-    organizationRole: claims[config.oidc.rolesClaim] ?? null,
-    projectRole: claims[config.oidc.projectRoleClaim] ?? null,
+    tenantId: null,
+    organizationRole: null,
+    projectRole: null,
     authenticated: true,
-    staged: false
+    staged: false,
+    identityProvider: claims.iss,
+    identitySubject: claims.sub ?? null,
+    emailVerified: claims.email_verified === true,
+    verifiedEmail,
+    displayName: typeof claims.name === "string" && claims.name.trim() ? claims.name.trim() : null
   };
 }
 

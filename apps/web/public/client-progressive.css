@@ -1,0 +1,18 @@
+.business-brief{display:grid;grid-template-columns:repeat(4,1fr);margin-top:34px;border-block:1px solid var(--line)}
+.business-brief article{padding:22px;border-right:1px solid var(--line)}
+.business-brief article:last-child{border:0}
+.business-brief span{color:var(--muted-2);font-size:9px}
+.business-brief strong{display:block;margin:12px 0;font-size:24px}
+.business-brief p{color:var(--muted);font-size:11px;line-height:1.55}
+.business-next{max-width:720px;margin-top:36px;padding:24px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+.business-next h2{margin:8px 0;font-size:24px}
+.business-next>p:not(.eyebrow){color:var(--muted);font-size:11px}
+.business-next button{margin:12px 5px 0 0}
+.connections-view .connection-groups{margin-top:34px}
+.product-view[data-product-view="workspace"] .split-workspace{grid-template-columns:minmax(320px,720px);justify-content:center;background:transparent;border:0}
+.product-view[data-product-view="workspace"] .conversation-panel{min-height:calc(100vh - 165px);border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+.product-view[data-product-view="workspace"] .artifact-panel,.product-view[data-product-view="workspace"] .context-panel{display:none}
+.product-view[data-product-view="workspace"] .split-workspace.expanded{grid-template-columns:minmax(300px,31%) minmax(440px,1fr) 280px;justify-content:stretch;border:1px solid var(--line);background:var(--panel)}
+.product-view[data-product-view="workspace"] .split-workspace.expanded .conversation-panel{min-height:0;border:0;border-right:1px solid var(--line);border-radius:0}
+.product-view[data-product-view="workspace"] .split-workspace.expanded .artifact-panel,.product-view[data-product-view="workspace"] .split-workspace.expanded .context-panel{display:block}
+@media(max-width:820px){.business-brief{grid-template-columns:1fr 1fr}.business-brief article{border-bottom:1px solid var(--line)}.product-view[data-product-view="workspace"] .split-workspace.expanded{grid-template-columns:1fr}.product-view[data-product-view="workspace"] .split-workspace.expanded .artifact-panel,.product-view[data-product-view="workspace"] .split-workspace.expanded .context-panel{display:none}}

@@ -13,6 +13,7 @@ import { createRateLimiter } from "./http/rate-limit.js";
 import { createMetrics } from "./telemetry/metrics.js";
 import { rootLogger } from "./telemetry/logger.js";
 import { assertStagedMode } from "../../../packages/staged-mode/src/index.js";
+import { createRuntimeRepositories } from "./runtime-repositories.js";
 
 function sendJson(res, status, body, extraHeaders = {}) {
   if (res.headersSent) {
@@ -20,6 +21,16 @@ function sendJson(res, status, body, extraHeaders = {}) {
   }
   res.writeHead(status, baseResponseHeaders({ "content-type": "application/json", ...extraHeaders }));
   res.end(JSON.stringify(body));
+}
+
+function sendHandlerResult(res, result) {
+  const contentType = result.headers?.["content-type"] ?? result.headers?.["Content-Type"] ?? "";
+  if (contentType.startsWith("text/event-stream")) {
+    res.writeHead(result.status, result.headers);
+    res.end(result.body);
+    return;
+  }
+  sendJson(res, result.status, result.body, result.headers);
 }
 
 function authErrorResponse(res, error) {
@@ -39,6 +50,7 @@ export function createServer({ env = process.env, logger = rootLogger, metrics =
 
   const jwks = authConfig.mode === "oidc" ? createRemoteJwks({ jwksUri: authConfig.oidc.jwksUri }) : null;
   const repository = createRepositoryFromEnv(env);
+  const runtimeRepositories = createRuntimeRepositories({ env, coreRepository: repository });
 
   const maxBodyBytes = Number(env.XYGO_MAX_BODY_BYTES ?? 1_048_576);
   const requestTimeoutMs = Number(env.XYGO_REQUEST_TIMEOUT_MS ?? 15_000);
@@ -66,7 +78,7 @@ export function createServer({ env = process.env, logger = rootLogger, metrics =
         path: (req.url ?? "/").split("?")[0],
         status: res.statusCode,
         durationMs: Math.round(durationMs * 100) / 100,
-        tenant: req.headers["x-staged-tenant-id"] ?? null
+        authenticated: Boolean(req.headers.authorization)
       });
     });
 
@@ -171,19 +183,28 @@ export function createServer({ env = process.env, logger = rootLogger, metrics =
       clearTimeout(timeout);
       const body = chunks.length > 0 ? Buffer.concat(chunks).toString("utf8") : null;
 
-      resolvePrincipal({ headers: req.headers, searchParams: url.searchParams, config: authConfig, jwks })
-        .then(async (principal) => {
+      const processRequest = async (principal) => {
           const result = await handleApiRequest({
             method: req.method,
             path: req.url ?? "/",
             headers: req.headers,
             body,
             repository,
+            auditRepository: runtimeRepositories.auditRepository,
+            billingRepository: runtimeRepositories.billingRepository,
+            onboardingRepository: runtimeRepositories.onboardingRepository,
             principal,
-            authConfig
+            authConfig,
+            env
           });
-          sendJson(res, result.status, result.body, result.headers);
-        })
+          sendHandlerResult(res, result);
+      };
+      const isStripeWebhook = req.method === "POST" && path === "/v1/billing/stripe/webhook";
+      const principalPromise = isStripeWebhook
+        ? Promise.resolve(null)
+        : resolvePrincipal({ headers: req.headers, searchParams: url.searchParams, config: authConfig, jwks });
+      principalPromise
+        .then(processRequest)
         .catch((error) => {
           if (error instanceof AuthError) {
             authErrorResponse(res, error);

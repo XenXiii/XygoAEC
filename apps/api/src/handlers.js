@@ -15,6 +15,9 @@ import { buildClientPortalView } from "../../../packages/client-portal/src/index
 import { baseResponseHeaders } from "./http/headers.js";
 import { sharedOutbox } from "./reliability/outbox.js";
 import { createIdempotencyStore, idempotencyKeyFor } from "./reliability/idempotency.js";
+import { handleAuthenticatedAuditRequest, sharedAuditRepository } from "./audit/handler.js";
+import { handleBillingRequest } from "./billing/handler.js";
+import { handleOnboardingRequest, sharedOnboardingRepository } from "./onboarding/handler.js";
 
 const sharedIdempotency = createIdempotencyStore();
 
@@ -589,6 +592,12 @@ async function handleCollectionCreate({ resource, body, tenantId, actorId, repos
 
 export async function handleApiRequest(request) {
   try {
+    const billingResult = await handleBillingRequest({ ...request, auditRepository: request.auditRepository ?? sharedAuditRepository, billingRepository: request.billingRepository });
+    if (billingResult) return billingResult;
+    const auditResult = await handleAuthenticatedAuditRequest({ ...request, auditRepository: request.auditRepository ?? sharedAuditRepository });
+    if (auditResult) return auditResult;
+    const onboardingResult = await handleOnboardingRequest({ ...request, onboardingRepository: request.onboardingRepository ?? sharedOnboardingRepository });
+    if (onboardingResult) return onboardingResult;
     return await routeApiRequest(request);
   } catch (error) {
     if (error instanceof SyntaxError) {

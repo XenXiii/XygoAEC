@@ -1,0 +1,54 @@
+{
+  "expo": {
+    "name": "Xygo",
+    "slug": "xygo",
+    "scheme": "xygo",
+    "plugins": [
+      "expo-router",
+      [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": true,
+          "faceIDPermission": "Allow Xygo to securely access your session."
+        }
+      ],
+      "expo-web-browser"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "pro.xygo.app",
+      "associatedDomains": [
+        "applinks:www.xygo.pro"
+      ]
+    },
+    "android": {
+      "package": "pro.xygo.app",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "www.xygo.pro",
+              "pathPrefix": "/app"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
+    },
+    "extra": {
+      "apiUrl": "${EXPO_PUBLIC_XYGO_API_URL}",
+      "oidcIssuer": "${EXPO_PUBLIC_XYGO_OIDC_ISSUER}",
+      "oidcClientId": "${EXPO_PUBLIC_XYGO_OIDC_CLIENT_ID}",
+      "oidcAudience": "${EXPO_PUBLIC_XYGO_OIDC_AUDIENCE}"
+    },
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

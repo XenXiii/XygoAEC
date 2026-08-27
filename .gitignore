@@ -12,3 +12,5 @@ infrastructure/staged-data/*.tmp
 # Logs and temp files
 *.log
 *.tmp
+.vercel
+.env*

@@ -1,0 +1,60 @@
+import crypto from "node:crypto";
+import { applyFact, completeStage, createAuditState } from "../../audit-engine/src/index.js";
+import { projectBusinessCanvas } from "../../business-canvas/src/index.js";
+import { authorizeToolInvocation, validateCopilotOutput } from "../../audit-copilot/src/index.js";
+
+export const WORKSPACE_ROLES=Object.freeze(["owner","admin","staff","advisor","read_only_auditor"]);
+const WRITE_ROLES=new Set(["owner","admin","staff"]); const MANAGE_ROLES=new Set(["owner","admin"]);
+const clone=(v)=>structuredClone(v); const id=(prefix)=>`${prefix}-${crypto.randomUUID()}`;
+
+export function createAuditPlatformRepository(seed={}) {
+  const workspaces=new Map((seed.workspaces??[]).map(x=>[x.id,clone(x)]));
+  const memberships=new Map((seed.memberships??[]).map(x=>[`${x.workspaceId}:${x.userId}`,clone(x)]));
+  const conversations=new Map((seed.conversations??[]).map(x=>[x.id,clone(x)]));
+  const messages=new Map(); const states=new Map((seed.states??[]).map(x=>[x.conversationId,clone(x)])); const evidence=new Map(); const snapshots=new Map(); const invocations=new Map(); const invitations=new Map(); const idempotency=new Map();
+  return {
+    createWorkspace(record){if(workspaces.has(record.id))throw new Error("Workspace already exists.");workspaces.set(record.id,clone(record));return clone(record)},
+    getWorkspace(workspaceId){return clone(workspaces.get(workspaceId)??null)},
+    saveMembership(record){if(!WORKSPACE_ROLES.includes(record.role))throw new Error("Unknown workspace role.");memberships.set(`${record.workspaceId}:${record.userId}`,clone(record));return clone(record)},
+    getMembership(workspaceId,userId){const value=memberships.get(`${workspaceId}:${userId}`);return value?.status!=="active"?null:clone(value)},
+    listMembershipsForUser(userId){return [...memberships.values()].filter(x=>x.userId===userId&&x.status==="active").map(clone)},
+    revokeMembership(workspaceId,userId,at){const key=`${workspaceId}:${userId}`;const value=memberships.get(key);if(!value)return null;const next={...value,status:"revoked",revokedAt:at};memberships.set(key,next);return clone(next)},
+    saveInvitation(record){invitations.set(record.id,clone(record));return clone(record)}, getInvitation(invitationId){return clone(invitations.get(invitationId)??null)},
+    acceptInvitation(invitationId,userId,at){const value=invitations.get(invitationId);if(!value||value.status!=="pending")return null;const next={...value,status:"accepted",acceptedBy:userId,acceptedAt:at};invitations.set(invitationId,next);return clone(next)},
+    saveConversation(record){conversations.set(record.id,clone(record));return clone(record)},
+    getConversation(workspaceId,conversationId){const value=conversations.get(conversationId);return value?.workspaceId===workspaceId?clone(value):null},
+    listConversations(workspaceId){return [...conversations.values()].filter(x=>x.workspaceId===workspaceId).map(clone)},
+    appendMessage(record){const list=messages.get(record.conversationId)??[];list.push(clone(record));messages.set(record.conversationId,list);return clone(record)},
+    listMessages(workspaceId,conversationId){if(!this.getConversation(workspaceId,conversationId))return [];return (messages.get(conversationId)??[]).map(clone)},
+    saveAuditState(record){states.set(record.conversationId,clone(record));return clone(record)}, getAuditState(workspaceId,conversationId){return this.getConversation(workspaceId,conversationId)?clone(states.get(conversationId)??null):null},
+    saveEvidence(record){evidence.set(record.id,clone(record));return clone(record)}, listEvidence(workspaceId,conversationId){return [...evidence.values()].filter(x=>x.workspaceId===workspaceId&&x.conversationId===conversationId).map(clone)},
+    saveCanvasSnapshot(record){snapshots.set(record.conversationId,clone(record));return clone(record)}, getCanvasSnapshot(workspaceId,conversationId){return this.getConversation(workspaceId,conversationId)?clone(snapshots.get(conversationId)??null):null},
+    saveToolInvocation(record){invocations.set(record.id,clone(record));return clone(record)},
+    getIdempotent(key){return clone(idempotency.get(key)??null)}, saveIdempotent(key,value){idempotency.set(key,clone(value));return clone(value)}
+  };
+}
+
+async function requireMembership(repository,principal,workspaceId,{write=false,manage=false}={}){
+  if(!principal?.authenticated||!principal.userId)throw Object.assign(new Error("Authentication required."),{status:401});
+  const membership=await repository.getMembership(workspaceId,principal.userId);if(!membership)throw Object.assign(new Error("Workspace access denied."),{status:403});
+  if(write&&!WRITE_ROLES.has(membership.role))throw Object.assign(new Error("Workspace write access denied."),{status:403});
+  if(manage&&!MANAGE_ROLES.has(membership.role))throw Object.assign(new Error("Workspace management access denied."),{status:403});return membership;
+}
+
+export function createDeterministicCopilotProvider(){return {async complete({message,workspaceId,conversationId}){const clean=String(message).replace(/<[^>]*>/g,"").slice(0,2000);const count=(clean.match(/\d+/)?.[0]??null);return {message:count?"I saved that operating signal. What usually delays the next handoff?":"What measurable outcome should improve first?",questions:[],facts:count?[{id:id("fact"),workspaceId,stage:"operations_and_delivery",key:"operations.open_items",value:Number(count),sourceType:"conversation",evidenceRef:`message:${conversationId}`,confidence:"medium"}]:[],evidenceRefs:[],canvasUpdates:[],recommendationUpdates:[],approvalRequests:[]};}}}
+
+export function createAuditPlatformService({repository,provider=createDeterministicCopilotProvider(),now=()=>new Date().toISOString(),allowClientWorkspaceId=false}){
+  return {
+    async listWorkspaces(principal){if(!principal?.authenticated)throw Object.assign(new Error("Authentication required."),{status:401});const memberships=await repository.listMembershipsForUser(principal.userId);return Promise.all(memberships.map(async m=>({workspace:await repository.getWorkspace(m.workspaceId),role:m.role})))},
+    // Workspace ids are generated server-side; a client-supplied id is honored ONLY when
+    // allowClientWorkspaceId is explicitly enabled (test seeding), never in production.
+    async createWorkspace(principal,input){if(!principal?.authenticated)throw Object.assign(new Error("Authentication required."),{status:401});const workspaceId=allowClientWorkspaceId&&input.id?String(input.id):id("workspace");const workspace={id:workspaceId,displayName:String(input.displayName??"").trim(),status:"onboarding",createdAt:now()};if(!workspace.displayName)throw Object.assign(new Error("displayName is required."),{status:400});await repository.createWorkspace(workspace);await repository.saveMembership({workspaceId:workspace.id,userId:principal.userId,role:"owner",status:"active",createdAt:now()});return workspace},
+    async invite(principal,workspaceId,input){await requireMembership(repository,principal,workspaceId,{manage:true});if(!WORKSPACE_ROLES.includes(input.role)||input.role==="owner")throw Object.assign(new Error("Invitation role is invalid."),{status:400});return repository.saveInvitation({id:id("invite"),workspaceId,emailLookupHash:input.emailLookupHash,role:input.role,status:"pending",createdBy:principal.userId,createdAt:now()})},
+    async acceptInvitation(principal,invitationId){if(!principal?.authenticated||!principal.userId)throw Object.assign(new Error("Authentication required."),{status:401});const invitation=await repository.getInvitation(invitationId);if(!invitation||invitation.status!=="pending")throw Object.assign(new Error("Invitation unavailable."),{status:404});if(!principal.emailLookupHash||principal.emailLookupHash!==invitation.emailLookupHash)throw Object.assign(new Error("Invitation identity mismatch."),{status:403});await repository.saveMembership({workspaceId:invitation.workspaceId,userId:principal.userId,role:invitation.role,status:"active",createdAt:now()});await repository.acceptInvitation(invitationId,principal.userId,now());return {workspaceId:invitation.workspaceId,role:invitation.role}},
+    async revoke(principal,workspaceId,userId){await requireMembership(repository,principal,workspaceId,{manage:true});if((await repository.getMembership(workspaceId,userId))?.role==="owner")throw Object.assign(new Error("Owner membership cannot be revoked."),{status:409});return repository.revokeMembership(workspaceId,userId,now())},
+    async createConversation(principal,workspaceId,input={}){await requireMembership(repository,principal,workspaceId,{write:true});const conversation={id:input.id??id("conversation"),workspaceId,createdBy:principal.userId,title:input.title??"Business audit",status:"active",createdAt:now(),updatedAt:now()};await repository.saveConversation(conversation);const state=createAuditState({workspaceId,conversationId:conversation.id,now:now()});await repository.saveAuditState(state);await repository.saveCanvasSnapshot({workspaceId,conversationId:conversation.id,projection:projectBusinessCanvas(state),createdAt:now()});return conversation},
+    async getConversation(principal,workspaceId,conversationId){await requireMembership(repository,principal,workspaceId);const conversation=await repository.getConversation(workspaceId,conversationId);if(!conversation)throw Object.assign(new Error("Conversation not found."),{status:404});return {conversation,messages:await repository.listMessages(workspaceId,conversationId),state:await repository.getAuditState(workspaceId,conversationId),evidence:await repository.listEvidence(workspaceId,conversationId),canvas:await repository.getCanvasSnapshot(workspaceId,conversationId)}},
+    async sendMessage(principal,workspaceId,conversationId,input,{idempotencyKey,signal}={}){await requireMembership(repository,principal,workspaceId,{write:true});if(!idempotencyKey)throw Object.assign(new Error("Idempotency-Key is required."),{status:400});const cacheKey=`${workspaceId}:${conversationId}:${idempotencyKey}`;const cached=await repository.getIdempotent(cacheKey);if(cached)return cached;if(signal?.aborted)throw Object.assign(new Error("Request cancelled."),{status:499});if(/ignore (all|previous) instructions|system prompt|developer message/i.test(input.message))throw Object.assign(new Error("Untrusted instruction pattern rejected."),{status:400,code:"prompt_injection_rejected"});if(!await repository.getConversation(workspaceId,conversationId))throw Object.assign(new Error("Conversation not found."),{status:404});const userMessage=await repository.appendMessage({id:id("message"),workspaceId,conversationId,role:"user",content:String(input.message).slice(0,8000),createdAt:now()});const output=validateCopilotOutput(await provider.complete({message:userMessage.content,workspaceId,conversationId,signal}));let state=await repository.getAuditState(workspaceId,conversationId);for(const fact of output.facts)state=applyFact(state,fact);if(input.completeStage)state=completeStage(state,input.completeStage);await repository.saveAuditState(state);const assistant=await repository.appendMessage({id:id("message"),workspaceId,conversationId,role:"assistant",content:output.message,structured:output,createdAt:now()});for(const ref of output.evidenceRefs)await repository.saveEvidence({...ref,workspaceId,conversationId});const canvas=await repository.saveCanvasSnapshot({workspaceId,conversationId,projection:projectBusinessCanvas(state),createdAt:now()});const result={userMessage,assistant,state,canvas};await repository.saveIdempotent(cacheKey,result);return result},
+    async invokeTool(principal,workspaceId,input){await requireMembership(repository,principal,workspaceId,{write:true});const decision=authorizeToolInvocation(input,{allowedTools:["save_draft","request_approval"],workspaceId,requiresApproval:["request_approval"]});if(!decision.allowed)throw Object.assign(new Error(decision.reason),{status:403});return repository.saveToolInvocation({id:id("tool"),...input,userId:principal.userId,status:"accepted",createdAt:now()})}
+  };
+}

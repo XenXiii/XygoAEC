@@ -1,0 +1,2 @@
+import { Text } from "react-native"; import { Card, Screen, styles } from "../../src/ui";
+export default function Chat(){return <Screen title="Audit Copilot"><Card title="Secure conversation"><Text style={styles.body}>Sign in, choose a workspace, and continue your persistent audit. Streaming responses can reconnect safely using idempotent message keys.</Text></Card><Card title="Offline"><Text style={styles.muted}>Only unsent conversation drafts are stored offline. Tools and account changes always require a live connection.</Text></Card></Screen>}

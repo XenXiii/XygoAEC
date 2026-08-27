@@ -1,0 +1,2 @@
+import { Text } from "react-native"; import { Card, Screen, styles } from "../../src/ui";
+export default function Business(){return <Screen title="Business Canvas"><Card title="One free solution"><Text style={styles.body}>Your server-verified free result appears here. Full findings remain locked until the entitlement API confirms access.</Text></Card><Card title="Data health"><Text style={styles.body}>Review manual, imported, and connected metrics with their source, confidence, and last sync state.</Text></Card></Screen>}

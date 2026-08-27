@@ -150,6 +150,7 @@ export function createPostgresRepository({ connectionString }) {
   const one = (result) => (result.rows[0] ? result.rows[0].payload : null);
 
   return {
+    rawQuery(text, params = []) { return query(text, params); },
     async listProjectsByTenant(tenantId) {
       return payloads(await query("SELECT payload FROM projects WHERE tenant_id = $1", [tenantId]));
     },

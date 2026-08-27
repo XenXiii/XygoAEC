@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark"><title>Xygo — Conversational Business Audit</title>
+  <link rel="stylesheet" href="/audit-workspace.css">
+</head>
+<body>
+  <a class="skip" href="#conversation">Skip to audit conversation</a>
+  <header><a class="brand" href="/">xygo<span>.</span></a><button class="workspace" aria-label="Switch workspace">Northstar Studio⌄</button><div class="progress"><span>Audit progress</span><strong id="progress-value">32%</strong><i><b></b></i></div><button class="quiet">Integrations <em>2</em></button><a class="plan" href="/checkout">Free plan</a><button class="avatar" aria-label="Open profile">XS</button></header>
+  <main>
+    <section class="copilot" id="conversation" aria-labelledby="copilot-title">
+      <div class="section-head"><div><span class="eyebrow">AUDIT COPILOT</span><h1 id="copilot-title">Find the constraint.</h1></div><button class="icon" aria-label="Open conversation options">•••</button></div>
+      <div class="messages" id="messages" aria-live="polite" aria-relevant="additions">
+        <article class="message assistant"><div class="mark">X</div><div><p>Your pipeline is healthy at the top, but I need to understand where qualified opportunities slow down. What happens after a proposal is sent?</p><button class="citation" data-target="sales-cycle">1 source · CRM summary</button></div></article>
+        <article class="message user"><p>Usually the account lead follows up manually. It can take a week if delivery work gets busy.</p></article>
+        <article class="message assistant"><div class="mark">X</div><div><p>That handoff looks like the first measurable constraint. Roughly how many open proposals are waiting for follow-up today?</p><div class="question"><label for="proposal-count">Open proposals <span>Estimate is fine</span></label><input id="proposal-count" inputmode="numeric" placeholder="e.g. 12"><button id="save-fact">Save</button></div></div></article>
+      </div>
+      <form class="composer" id="composer"><label class="sr-only" for="message">Message Xygo</label><textarea id="message" rows="2" placeholder="Describe what happens next…"></textarea><div><button type="button" class="attach" aria-label="Attach evidence">＋</button><span>Evidence can be reviewed before use</span><button class="send" aria-label="Send message">↑</button></div></form>
+    </section>
+    <section class="canvas" aria-labelledby="canvas-title">
+      <div class="section-head"><div><span class="eyebrow">LIVE BUSINESS CANVAS</span><h2 id="canvas-title">Your business, as evidence.</h2></div><span class="sync" id="sync-status">● Synced</span></div>
+      <nav class="tabs" aria-label="Canvas views"><button aria-current="page">Business</button><button>Metrics</button><button>Constraints</button><button>Opportunities</button></nav>
+      <div class="canvas-body">
+        <section class="model"><div class="panel-title"><h3>Business model</h3><span>8 facts</span></div><dl><div><dt>Model</dt><dd>Project-based services</dd></div><div><dt>Primary buyer</dt><dd>Operations leaders</dd></div><div><dt>Growth goal</dt><dd>Increase qualified capacity</dd></div></dl></section>
+        <section class="constraint" id="sales-cycle" tabindex="-1"><div><span class="eyebrow amber">PRIMARY CONSTRAINT</span><h3>Proposal follow-up depends on delivery capacity</h3><p>Manual ownership creates a variable 3–7 day response window after proposals are sent.</p></div><div class="confidence"><span>Confidence</span><strong>Medium</strong><i><b></b></i><small>2 supporting sources</small></div></section>
+        <section class="kpis"><div class="panel-title"><h3>KPI tree</h3><button>View sources</button></div><div class="kpi-row"><div><span>Monthly revenue</span><strong>$84k</strong><small>Manual · Jul 31</small></div><i>→</i><div><span>Proposal win rate</span><strong>28%</strong><small>Connected · CRM</small></div><i>→</i><div class="unknown"><span>Follow-up time</span><strong id="follow-up-metric">Needs data</strong><small>Low confidence</small></div></div></section>
+        <section class="free-result"><div><span class="eyebrow">FREE SOLUTION</span><h3>Standardize the proposal follow-up handoff</h3><p>Assign an owner and a 24-hour follow-up trigger when a proposal changes status.</p></div><button>Review solution →</button></section>
+        <section class="locked" aria-label="Paid audit findings locked"><span>⌁</span><div><strong>4 additional findings and 3 scaling scenarios</strong><p>Unlock after verified subscription activation.</p></div><a href="/checkout">Compare plans</a></section>
+      </div>
+    </section>
+  </main>
+  <footer><button><span>●</span> HubSpot</button><button><span>●</span> Manual metrics</button><button>Data health <strong>72%</strong></button><button>Sources <strong>6</strong></button><button>Audit map <strong>4 / 12</strong></button></footer>
+  <script type="module" src="/audit-workspace.js"></script>
+</body></html>

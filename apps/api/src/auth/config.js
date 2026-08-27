@@ -15,6 +15,7 @@ export function loadAuthConfig(env = process.env) {
   const config = {
     mode,
     stagedModeEnabled,
+    runtimeEnvironment: env.NODE_ENV ?? "development",
     oidc: null
   };
 
@@ -53,10 +54,10 @@ export function assertAuthConfig(config) {
 
   // mode === "staged": self-asserted identity is only permissible while STAGED_MODE
   // is on. Refuse to boot the staged trust model with production mode requested.
-  if (!config.stagedModeEnabled) {
+  if (!config.stagedModeEnabled || config.runtimeEnvironment === "production") {
     throw new AuthError(
       "unsafe_config",
-      "STAGED_MODE=false requires XYGO_AUTH_MODE=oidc: self-asserted tenant identity cannot run in production mode."
+      "Production or STAGED_MODE=false requires XYGO_AUTH_MODE=oidc: self-asserted tenant identity cannot run in production mode."
     );
   }
 }

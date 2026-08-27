@@ -1,0 +1,2 @@
+import { Link } from "expo-router"; import { Text } from "react-native"; import { Card, Screen, styles } from "../../src/ui";
+export default function Actions(){return <Screen title="Actions"><Card title="Approvals"><Text style={styles.body}>Consequential tools require explicit approval and are never queued offline.</Text></Card><Card title="Account"><Link href="/account" style={styles.body}>Integrations, team, billing, security and privacy</Link></Card></Screen>}

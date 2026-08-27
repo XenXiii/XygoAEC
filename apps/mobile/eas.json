@@ -1,0 +1,1 @@
+{"cli":{"version":">= 16.0.0"},"build":{"development":{"developmentClient":true,"distribution":"internal","env":{"EXPO_PUBLIC_XYGO_BILLING_MODE":"external_account_handoff"}},"preview":{"distribution":"internal"},"production":{"autoIncrement":true}},"submit":{"production":{}}}

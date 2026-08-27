@@ -9,14 +9,14 @@
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to content</a>
-    <header class="site-header"><div class="nav-inner"><a class="brand" href="/">Xy<span>go</span></a><div class="nav-actions"><a class="btn btn-secondary" href="/privacy">Privacy Policy</a></div></div></header>
+    <header class="site-header"><div class="nav-inner"><a class="brand" href="/" aria-label="Xygo home">XY<span>GO</span></a><button class="menu-toggle" type="button" aria-expanded="false" aria-controls="primary-navigation" aria-label="Open navigation"><span></span></button><nav aria-label="Primary"><ul class="nav-links" id="primary-navigation"><li><a href="/#product">Product</a></li><li><a href="/business-audit">Audit</a></li><li><a href="/services">Plans</a></li><li><a href="/demo">Demo</a></li></ul></nav><div class="nav-actions"><a class="text-link" href="/privacy">Privacy</a><a class="btn btn-primary" href="/demo">Start audit</a></div></div></header>
     <main id="main-content">
-      <section class="section-muted" style="padding-top:8rem;min-height:75vh">
-        <div class="container" style="max-width:760px">
+      <section class="section-muted privacy-control">
+        <div class="container privacy-control-inner">
           <p class="eyebrow">Privacy Control</p>
           <h1>Your Privacy Choices</h1>
-          <p style="margin-top:1rem">Xygo does not sell personal information for money. Use this form to opt out of sale or sharing as those terms may be defined by applicable privacy laws, or to submit another data request.</p>
-          <form class="contact-form" id="privacy-form" style="margin-top:2rem">
+          <p class="privacy-intro">Xygo does not sell personal information for money. Use this form to opt out of sale or sharing as those terms may be defined by applicable privacy laws, or to submit another data request.</p>
+          <form class="contact-form" id="privacy-form">
             <label>Request type<select name="requestType" required><option value="do_not_sell_or_share">Do not sell or share my personal information</option><option value="access">Access my personal information</option><option value="correction">Correct my personal information</option><option value="deletion">Delete my personal information</option></select></label>
             <label>Name <span class="muted">(optional)</span><input name="name" autocomplete="name" maxlength="200"></label>
             <label>Email<input name="email" type="email" autocomplete="email" maxlength="254" required></label>
@@ -27,6 +27,7 @@
         </div>
       </section>
     </main>
-    <script type="module" src="/privacy-choices.js"></script>
+    <footer class="footer"><div class="container footer-inner"><a class="brand" href="/">XY<span>GO</span></a><p>AI systems for measurable business scale.</p><div class="footer-links"><a href="/about">About</a><a href="/mission">Mission</a><a href="/investors">Investor Relations</a><a href="/contact">Contact</a><a href="/privacy">Privacy</a><a href="/privacy-choices" aria-current="page">Your Privacy Choices</a><a href="/terms">Terms</a><a href="/accessibility">Accessibility</a></div></div></footer>
+    <script src="/demo.js" defer></script><script type="module" src="/privacy-choices.js"></script>
   </body>
 </html>
